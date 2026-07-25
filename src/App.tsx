@@ -108,8 +108,10 @@ export default function App() {
   }, [themeMode]);
 
   // Fetch initial data and setup polling every 3 seconds
+  // เชื่อมต่อรับค่าจริงแบบ Real-time 100% (Server-Sent Events)
   useEffect(() => {
-    const fetchData = async () => {
+    // 1. ดึงข้อมูลประวัติย้อนหลังครั้งแรกตอนโหลดหน้าเว็บ
+    const fetchInitialData = async () => {
       try {
         const res = await fetch('/api/iot/data');
         if (res.ok) {
@@ -118,13 +120,62 @@ export default function App() {
           if (data.history) setHistory(data.history);
         }
       } catch (err) {
-        console.error('Failed to fetch IoT telemetry:', err);
+        console.error('Failed to fetch initial IoT telemetry:', err);
       }
     };
 
-    fetchData();
-    const interval = setInterval(fetchData, 3000);
-    return () => clearInterval(interval);
+    fetchInitialData();
+
+    // 2. เปิดท่อรับการสตรีมข้อมูลเรียลไทม์จากเซิร์ฟเวอร์
+    const eventSource = new EventSource('/api/iot/stream');
+
+    eventSource.onmessage = (event) => {
+      try {
+        const realTimeData = JSON.parse(event.data);
+        
+        // เมื่อมีค่าใหม่จากบอร์ด ESP32 เข้ามา ให้เปลี่ยนตัวเลขบนหน้าปัดทันที
+        if (realTimeData.telemetry) {
+          setTelemetry((prev) => ({
+            ...prev,
+            ...realTimeData.telemetry,
+            status: 'online',
+            lastUpdated: new Date().toISOString(),
+          }));
+
+          // อัปเดตจุดของอุณหภูมิและความชื้นลงในกราฟทันที
+          setHistory((prevHistory) => {
+            const now = new Date();
+            const timeStr = now.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+            const dayStr = days[now.getDay()];
+            const dateStr = now.toLocaleDateString('th-TH');
+
+            const newPoint = {
+              time: timeStr,
+              day: dayStr,
+              dateStr: dateStr,
+              temperature: realTimeData.telemetry.temperature,
+              humidity: realTimeData.telemetry.humidity,
+            };
+
+            // เก็บประวัติจุดบนกราฟย้อนหลังไม่เกิน 200 จุด เพื่อไม่ให้เบราว์เซอร์ช้า
+            return [...prevHistory, newPoint].slice(-200);
+          });
+        }
+      } catch (err) {
+        console.error('Error parsing real-time stream:', err);
+      }
+    };
+
+    eventSource.onerror = () => {
+      // หากเซิร์ฟเวอร์หลุด ให้เปลี่ยนสถานะเป็น offline
+      setTelemetry((prev) => ({ ...prev, status: 'offline' }));
+    };
+
+    // ปิดการเชื่อมต่อเมื่อเปลี่ยนหน้าหรือปิดเว็บ
+    return () => {
+      eventSource.close();
+    };
   }, []);
 
   // Drag and Drop card reordering state

@@ -1,0 +1,6 @@
+{
+  "name": "Smart IoT Monitoring Dashboard",
+  "description": "Online IoT Dashboard for Electrical Calibration Room with ESP32 integration, customizable layout, auto chart image export, and day/night mode.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

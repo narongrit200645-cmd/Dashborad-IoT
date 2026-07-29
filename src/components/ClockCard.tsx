@@ -82,7 +82,7 @@ export const ClockCard: React.FC<ClockCardProps> = ({
         }`}
       >
         <img
-          src={clockLogoUrl || "/src/public/Logo NA"} // เรียกใช้รูปภาพจากโฟลเดอร์ public
+          src={clockLogoUrl || "Logo NA.png"} // เรียกใช้รูปภาพจากโฟลเดอร์ public
           alt="Logo NA"
           className="w-full h-full max-h-24 object-contain rounded-md"
         />

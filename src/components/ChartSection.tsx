@@ -102,19 +102,15 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
   const [isExporting, setIsExporting] = useState(false);
   const [exportSuccessMsg, setExportSuccessMsg] = useState<string | null>(null);
   const [autoMode, setAutoMode] = useState(true);
-  const [timeRange, setTimeRange] = useState<'today' | 'week' | 'month'>('week');
   const [brushRange, setBrushRange] = useState({ startIndex: 0, endIndex: 0 });
 
-  // Filter history based on timeRange
+  // ล็อก Time Range ให้เป็น 7 วันเสมอ (1 สัปดาห์)
+  const timeRange = 'week';
+
+  // Filter history based on locked timeRange (Week)
   const filteredHistory = useMemo(() => {
-    let baseData = history;
-    if (timeRange === 'today') {
-      baseData = history.slice(-24);
-    } else if (timeRange === 'week') {
-      baseData = history.slice(-7 * 24 > history.length ? -history.length : -168);
-    }
-    return baseData;
-  }, [history, timeRange]);
+    return history.slice(-7 * 24 > history.length ? -history.length : -168);
+  }, [history]);
 
   // Enrich data with unique xKeys and handle Data Gaps (> 15 mins)
   const chartData = useMemo(() => {
@@ -251,13 +247,13 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
 
         <div className="flex flex-wrap items-center gap-2">
           <div className={`flex items-center p-0.5 rounded-lg border text-xs font-semibold ${isDark ? 'bg-slate-900 border-slate-700' : 'bg-slate-100 border-slate-300'}`}>
-            <button onClick={() => setTimeRange('today')} className={`px-2 py-1 rounded ${timeRange === 'today' ? 'bg-blue-600 text-white font-bold shadow' : isDark ? 'text-slate-400 hover:text-white' : 'text-slate-600 hover:text-slate-900'}`}>
+            <button disabled className="px-2 py-1 rounded text-slate-500 cursor-not-allowed opacity-50">
               วันนี้ (Today)
             </button>
-            <button onClick={() => setTimeRange('week')} className={`px-2 py-1 rounded ${timeRange === 'week' ? 'bg-blue-600 text-white font-bold shadow' : isDark ? 'text-slate-400 hover:text-white' : 'text-slate-600 hover:text-slate-900'}`}>
+            <button className="px-2 py-1 rounded bg-blue-600 text-white font-bold shadow cursor-default">
               7 วัน (1 Week)
             </button>
-            <button onClick={() => setTimeRange('month')} className={`px-2 py-1 rounded ${timeRange === 'month' ? 'bg-blue-600 text-white font-bold shadow' : isDark ? 'text-slate-400 hover:text-white' : 'text-slate-600 hover:text-slate-900'}`}>
+            <button disabled className="px-2 py-1 rounded text-slate-500 cursor-not-allowed opacity-50">
               30 วัน (1 Month)
             </button>
           </div>

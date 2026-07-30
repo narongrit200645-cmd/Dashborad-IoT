@@ -305,6 +305,7 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
               <YAxis 
                 domain={[18, 32]} 
                 ticks={[18, 20, 22, 24, 26, 28, 30, 32]} 
+                interval={0}  /* บังคับแสดงทุก Tick ที่กำหนด */
                 tick={{ fill: isDark ? '#94A3B8' : '#334155', fontSize: 11, fontWeight: 'bold' }} 
                 stroke={isDark ? '#334155' : '#CBD5E1'} 
               />
@@ -372,6 +373,7 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
               <YAxis 
                 domain={[30, 90]} 
                 ticks={[30, 40, 50, 60, 70, 80, 90]} 
+                interval={0} /* บังคับแสดงทุก Tick ที่กำหนด */
                 tick={{ fill: isDark ? '#94A3B8' : '#334155', fontSize: 11, fontWeight: 'bold' }} 
                 stroke={isDark ? '#334155' : '#CBD5E1'} 
               />

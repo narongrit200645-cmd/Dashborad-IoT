@@ -69,11 +69,12 @@ export const ClockCard: React.FC<ClockCardProps> = ({
         className="hidden"
       />
 
-      <div className="relative group flex items-center justify-center mb-3 md:mb-0 md:mr-6 w-full md:w-auto h-24">
+      {/* ปรับ h-32 (ความสูง) และ md:w-64 (ความกว้าง) เพื่อให้โลโก้ใหญ่ขึ้น */}
+      <div className="relative group flex items-center justify-center mb-3 md:mb-0 md:mr-6 w-full md:w-64 h-32">
         <img
           src={clockLogoUrl || "/Logo NA.png"}
           alt="Logo NA"
-          className="w-auto h-full max-h-24 object-contain"
+          className="w-full h-full object-contain drop-shadow-md"
         />
 
         <button

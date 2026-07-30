@@ -135,7 +135,7 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
     return dataWithGaps;
   }, [filteredHistory]);
 
-  // Reset Brush Range when chart data size changes (e.g. initial load or range change)
+  // Reset Brush Range when chart data size changes
   useEffect(() => {
     if (chartData.length > 0) {
       setBrushRange({ startIndex: 0, endIndex: chartData.length - 1 });
@@ -189,7 +189,7 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
     }
   };
 
-  // Smart tick formatter for adaptive XAxis (Zoomed vs Unzoomed)
+  // Smart tick formatter for adaptive XAxis
   const formatAdaptiveXAxisTick = (val: any, index: number) => {
     if (typeof val === 'string' && val.includes('gap')) return '';
     const pt = chartData[index];
@@ -198,18 +198,17 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
     const visibleCount = brushRange.endIndex - brushRange.startIndex;
     const totalCount = chartData.length;
     
-    // หากซูมเข้ามาลึกเกิน 40% ของข้อมูลทั้งหมด จะถือว่าอยู่ในโหมด "ซูมดูรายละเอียด"
+    // โหมดซูมรายละเอียด (เห็นข้อมูลน้อยกว่า 40%)
     const isZoomed = totalCount > 0 && visibleCount < (totalCount * 0.4);
     
     const dayTh = THAI_DAYS[pt.day] || pt.day;
     const timeShort = pt.time.substring(0, 5); // "17:32"
 
     if (isZoomed) {
-      // โหมดซูม: แสดง วัน + เวลาละเอียด หรือเฉพาะเวลาถ้าซูมลึกมาก
       if (visibleCount < totalCount * 0.15) return timeShort;
       return `${dayTh} ${timeShort}`;
     } else {
-      // โหมดปกติ (ไม่ซูม): ล็อกแสดงเฉพาะ วัน(จ.,อ.,...) และเวลา 06:00, 12:00, 18:00
+      // โหมดปกติ: แสดงเฉพาะ วัน และเวลา 06:00, 12:00, 18:00
       const hour = parseInt(pt.time.split(':')[0], 10);
       const prevPt = index > 0 ? chartData[index - 1] : null;
       const prevHour = prevPt && prevPt.time ? parseInt(prevPt.time.split(':')[0], 10) : -1;
@@ -221,7 +220,7 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
       if (prevHour < 12 && hour >= 12) return '12:00';
       if (prevHour < 18 && hour >= 18) return '18:00';
       
-      return ''; // ซ่อน Tick อื่นๆ เพื่อให้กราฟดูคลีนเหมือนในรูปตัวอย่าง
+      return '';
     }
   };
 
@@ -302,7 +301,6 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
               
               <XAxis 
                 dataKey="xKey" 
-                reversed={true} /* เพิ่มคำสั่งสลับทิศทาง ขวาไปซ้าย */
                 tickFormatter={formatAdaptiveXAxisTick} 
                 tick={{ fill: isDark ? '#94A3B8' : '#334155', fontSize: 10, fontWeight: 'bold' }} 
                 stroke={isDark ? '#334155' : '#CBD5E1'} 
@@ -365,7 +363,6 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
               
               <XAxis 
                 dataKey="xKey" 
-                reversed={true} /* เพิ่มคำสั่งสลับทิศทาง ขวาไปซ้าย */
                 tickFormatter={formatAdaptiveXAxisTick} 
                 tick={{ fill: isDark ? '#94A3B8' : '#334155', fontSize: 10, fontWeight: 'bold' }} 
                 stroke={isDark ? '#334155' : '#CBD5E1'} 

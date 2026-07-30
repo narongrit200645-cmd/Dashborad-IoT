@@ -302,6 +302,7 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
               
               <XAxis 
                 dataKey="xKey" 
+                reversed={true} /* เพิ่มคำสั่งสลับทิศทาง ขวาไปซ้าย */
                 tickFormatter={formatAdaptiveXAxisTick} 
                 tick={{ fill: isDark ? '#94A3B8' : '#334155', fontSize: 10, fontWeight: 'bold' }} 
                 stroke={isDark ? '#334155' : '#CBD5E1'} 
@@ -364,6 +365,7 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
               
               <XAxis 
                 dataKey="xKey" 
+                reversed={true} /* เพิ่มคำสั่งสลับทิศทาง ขวาไปซ้าย */
                 tickFormatter={formatAdaptiveXAxisTick} 
                 tick={{ fill: isDark ? '#94A3B8' : '#334155', fontSize: 10, fontWeight: 'bold' }} 
                 stroke={isDark ? '#334155' : '#CBD5E1'} 

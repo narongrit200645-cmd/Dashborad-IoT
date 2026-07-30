@@ -9,6 +9,7 @@ import {
   Tooltip,
   ReferenceLine,
   ReferenceArea,
+  Brush
 } from 'recharts';
 import { Globe, Clock, Camera, CheckCircle2 } from 'lucide-react';
 import { toPng, toJpeg } from 'html-to-image';
@@ -56,70 +57,58 @@ const renderMinLabel = (props: any) => {
   );
 };
 
-interface OverflowSegment {
+interface BoundsSegment {
+  type: 'max' | 'min';
   startKey: string;
   endKey: string;
-  startIndex: number;
-  endIndex: number;
   peakValue: number;
 }
 
-// Calculate contiguous time periods where value exceeds max limit
-const getOverflowSegments = (
-  data: (HistoryPoint & { xKey: string })[],
-  key: 'temperature' | 'humidity',
-  limitMax: number
-): OverflowSegment[] => {
-  const segments: OverflowSegment[] = [];
-  let inOverflow = false;
-  let startIdx = 0;
-  let peakVal = 0;
+// Calculate contiguous time periods where value exceeds max limit or falls below min limit
+const getBoundsSegments = (
+  data: any[],
+  key: string,
+  minLimit: number,
+  maxLimit: number
+): BoundsSegment[] => {
+  const segments: BoundsSegment[] = [];
+  let currentSeg: BoundsSegment | null = null;
 
-  for (let i = 0; i < data.length; i++) {
-    const val = data[i][key];
-    if (val !== undefined && val !== null && val > limitMax) {
-      if (!inOverflow) {
-        inOverflow = true;
-        startIdx = i;
-        peakVal = val;
+  data.forEach((pt) => {
+    const val = pt[key];
+    if (val === null || val === undefined) {
+      if (currentSeg) {
+        segments.push(currentSeg);
+        currentSeg = null;
+      }
+      return;
+    }
+    
+    if (val > maxLimit) {
+      if (!currentSeg || currentSeg.type !== 'max') {
+        if (currentSeg) segments.push(currentSeg);
+        currentSeg = { type: 'max', startKey: pt.xKey, endKey: pt.xKey, peakValue: val };
       } else {
-        if (val > peakVal) peakVal = val;
+        currentSeg.endKey = pt.xKey;
+        currentSeg.peakValue = Math.max(currentSeg.peakValue, val);
+      }
+    } else if (val < minLimit) {
+      if (!currentSeg || currentSeg.type !== 'min') {
+        if (currentSeg) segments.push(currentSeg);
+        currentSeg = { type: 'min', startKey: pt.xKey, endKey: pt.xKey, peakValue: val };
+      } else {
+        currentSeg.endKey = pt.xKey;
+        currentSeg.peakValue = Math.min(currentSeg.peakValue, val);
       }
     } else {
-      if (inOverflow) {
-        let sIdx = startIdx;
-        let eIdx = i - 1;
-        if (sIdx === eIdx) {
-          sIdx = Math.max(0, startIdx - 1);
-          eIdx = Math.min(data.length - 1, i);
-        }
-        segments.push({
-          startKey: data[sIdx].xKey,
-          endKey: data[eIdx].xKey,
-          startIndex: sIdx,
-          endIndex: eIdx,
-          peakValue: peakVal,
-        });
-        inOverflow = false;
+      if (currentSeg) {
+        segments.push(currentSeg);
+        currentSeg = null;
       }
     }
-  }
+  });
 
-  if (inOverflow && data.length > 0) {
-    let sIdx = startIdx;
-    let eIdx = data.length - 1;
-    if (sIdx === eIdx) {
-      sIdx = Math.max(0, startIdx - 1);
-    }
-    segments.push({
-      startKey: data[sIdx].xKey,
-      endKey: data[eIdx].xKey,
-      startIndex: sIdx,
-      endIndex: eIdx,
-      peakValue: peakVal,
-    });
-  }
-
+  if (currentSeg) segments.push(currentSeg);
   return segments;
 };
 
@@ -146,13 +135,25 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
     return baseData;
   }, [history, timeRange]);
 
-  // Enrich data with unique xKeys so Recharts ReferenceArea accurately maps coordinates
+  // Enrich data with unique xKeys and handle Data Gaps (> 15 mins)
   const chartData = React.useMemo(() => {
-    return filteredHistory.map((pt, idx) => ({
-      ...pt,
-      xKey: `k_${idx}_${pt.day}`,
-      xIndex: idx,
-    }));
+    const dataWithGaps: any[] = [];
+    filteredHistory.forEach((pt, idx) => {
+      dataWithGaps.push({ ...pt, xKey: `k_${idx}_${pt.day}` });
+      
+      // เช็คว่าถ้าไม่ใช่ข้อมูลจุดสุดท้าย ให้เปรียบเทียบเวลากับจุดถัดไป
+      if (idx < filteredHistory.length - 1) {
+        const nextPt = filteredHistory[idx + 1];
+        const t1 = new Date(`${pt.dateStr} ${pt.time}`).getTime();
+        const t2 = new Date(`${nextPt.dateStr} ${nextPt.time}`).getTime();
+        
+        // หากเวลาห่างกันเกิน 15 นาที ให้แทรกค่า null เพื่อให้กราฟขาด
+        if ((t2 - t1) > 15 * 60 * 1000) {
+          dataWithGaps.push({ xKey: `gap_${idx}`, temperature: null, humidity: null });
+        }
+      }
+    });
+    return dataWithGaps;
   }, [filteredHistory]);
 
   // Temperature target & boundaries
@@ -167,14 +168,14 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
   const humMin = humTarget - humTol; // 40%
   const humMax = humTarget + humTol; // 70%
 
-  // Compute overflow segments for temperature and humidity
-  const tempOverflowSegments = React.useMemo(() => {
-    return getOverflowSegments(chartData, 'temperature', tempMax);
-  }, [chartData, tempMax]);
+  // Compute bound segments for temperature and humidity
+  const tempSegments = React.useMemo(() => {
+    return getBoundsSegments(chartData, 'temperature', tempMin, tempMax);
+  }, [chartData, tempMin, tempMax]);
 
-  const humOverflowSegments = React.useMemo(() => {
-    return getOverflowSegments(chartData, 'humidity', humMax);
-  }, [chartData, humMax]);
+  const humSegments = React.useMemo(() => {
+    return getBoundsSegments(chartData, 'humidity', humMin, humMax);
+  }, [chartData, humMin, humMax]);
 
   // Odoo direct link click
   const handleOdooClick = () => {
@@ -392,6 +393,7 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
               <XAxis
                 dataKey="xKey"
                 tickFormatter={(val, index) => {
+                  if (typeof val === 'string' && val.includes('gap')) return '';
                   const pt = chartData[index];
                   if (pt && pt.time) {
                     return `${pt.day} (${pt.time})`;
@@ -418,22 +420,36 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
                 formatter={(val: any) => [`${val} °C`, 'Temperature']}
                 labelFormatter={(label, items) => {
                   const pt = items[0]?.payload;
-                  return pt ? `⏱️ เวลา: ${pt.time} น. (${pt.day} - ${pt.dateStr})` : label;
+                  return pt && pt.time ? `⏱️ เวลา: ${pt.time} น. (${pt.day} - ${pt.dateStr})` : label;
                 }}
               />
-              {/* Red Bounding Frame Area across time periods exceeding MAX limit */}
-              {tempOverflowSegments.map((seg, idx) => (
-                <ReferenceArea
-                  key={`temp-overflow-${idx}`}
-                  x1={seg.startKey}
-                  x2={seg.endKey}
-                  y1={tempMax}
-                  y2={Math.min(seg.peakValue + 1.8, 33.5)}
-                  stroke="#EF4444"
-                  strokeWidth={2}
-                  fill="none"
-                  isFront={true}
-                />
+              
+              {/* Red/Blue Bounding Frame Area across time periods exceeding limits */}
+              {tempSegments.map((seg, idx) => (
+                <React.Fragment key={`temp-seg-${idx}`}>
+                  <ReferenceArea
+                    x1={seg.startKey}
+                    x2={seg.endKey}
+                    fill={seg.type === 'max' ? '#EF4444' : '#3B82F6'}
+                    fillOpacity={0.15}
+                  />
+                  <ReferenceArea
+                    x1={seg.startKey}
+                    x2={seg.endKey}
+                    y1={seg.type === 'max' ? tempMax : tempMin}
+                    y2={seg.type === 'max' ? Math.min(seg.peakValue + 1.8, 33.5) : Math.max(seg.peakValue - 1.8, 18.5)}
+                    stroke={seg.type === 'max' ? '#EF4444' : '#3B82F6'}
+                    strokeWidth={2}
+                    fill="none"
+                    label={{
+                      position: seg.type === 'max' ? 'top' : 'bottom',
+                      value: 'No Activity',
+                      fill: seg.type === 'max' ? '#EF4444' : '#3B82F6',
+                      fontSize: 12,
+                      fontWeight: 'bold'
+                    }}
+                  />
+                </React.Fragment>
               ))}
 
               {/* Threshold Reference Lines MIN (label below line) and MAX (label above line) */}
@@ -458,6 +474,9 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
                 dot={false}
                 activeDot={{ r: 6, fill: '#60A5FA' }}
               />
+
+              {/* ແถบลากซูมดูกราฟ (Brush) */}
+              <Brush dataKey="xKey" height={25} stroke="#2563EB" fill={isDark ? '#0F172A' : '#F1F5F9'} tickFormatter={() => ''} />
             </LineChart>
           </ResponsiveContainer>
         </div>
@@ -523,6 +542,7 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
               <XAxis
                 dataKey="xKey"
                 tickFormatter={(val, index) => {
+                  if (typeof val === 'string' && val.includes('gap')) return '';
                   const pt = chartData[index];
                   if (pt && pt.time) {
                     return `${pt.day} (${pt.time})`;
@@ -549,22 +569,36 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
                 formatter={(val: any) => [`${val} %`, 'Humidity']}
                 labelFormatter={(label, items) => {
                   const pt = items[0]?.payload;
-                  return pt ? `⏱️ เวลา: ${pt.time} น. (${pt.day} - ${pt.dateStr})` : label;
+                  return pt && pt.time ? `⏱️ เวลา: ${pt.time} น. (${pt.day} - ${pt.dateStr})` : label;
                 }}
               />
-              {/* Red Bounding Frame Area across time periods exceeding MAX limit */}
-              {humOverflowSegments.map((seg, idx) => (
-                <ReferenceArea
-                  key={`hum-overflow-${idx}`}
-                  x1={seg.startKey}
-                  x2={seg.endKey}
-                  y1={humMax}
-                  y2={Math.min(seg.peakValue + 4, 94)}
-                  stroke="#EF4444"
-                  strokeWidth={2}
-                  fill="none"
-                  isFront={true}
-                />
+
+              {/* Red/Blue Bounding Frame Area across time periods exceeding limits */}
+              {humSegments.map((seg, idx) => (
+                <React.Fragment key={`hum-seg-${idx}`}>
+                  <ReferenceArea
+                    x1={seg.startKey}
+                    x2={seg.endKey}
+                    fill={seg.type === 'max' ? '#EF4444' : '#3B82F6'}
+                    fillOpacity={0.15}
+                  />
+                  <ReferenceArea
+                    x1={seg.startKey}
+                    x2={seg.endKey}
+                    y1={seg.type === 'max' ? humMax : humMin}
+                    y2={seg.type === 'max' ? Math.min(seg.peakValue + 4, 94) : Math.max(seg.peakValue - 4, 31)}
+                    stroke={seg.type === 'max' ? '#EF4444' : '#3B82F6'}
+                    strokeWidth={2}
+                    fill="none"
+                    label={{
+                      position: seg.type === 'max' ? 'top' : 'bottom',
+                      value: 'No Activity',
+                      fill: seg.type === 'max' ? '#EF4444' : '#3B82F6',
+                      fontSize: 12,
+                      fontWeight: 'bold'
+                    }}
+                  />
+                </React.Fragment>
               ))}
 
               {/* Threshold Reference Lines MIN (label below line) and MAX (label above line) */}
@@ -589,6 +623,9 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
                 dot={false}
                 activeDot={{ r: 6, fill: '#7DD3FC' }}
               />
+
+              {/* แถบลากซูมดูกราฟ (Brush) */}
+              <Brush dataKey="xKey" height={25} stroke="#0284C7" fill={isDark ? '#0F172A' : '#F1F5F9'} tickFormatter={() => ''} />
             </LineChart>
           </ResponsiveContainer>
         </div>

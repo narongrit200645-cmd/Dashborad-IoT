@@ -142,23 +142,13 @@ export const ClockCard: React.FC<ClockCardProps> = ({
         className="hidden"
       />
 
-      {/* Left Logo Container */}
-      <div
-        className={`relative group flex items-center justify-center p-2 rounded-lg border mb-3 md:mb-0 md:mr-6 w-full md:w-48 h-28 transition-colors ${
-          isDark
-            ? 'bg-white/95 border-slate-200/80 shadow-inner'
-            : 'bg-slate-50 border-slate-300 shadow-md'
-        }`}
-      >
-        {clockLogoUrl ? (
-          <img
-            src={clockLogoUrl}
-            alt="Logo NA"
-            className="w-full h-full max-h-24 object-contain"
-          />
-        ) : (
-          <NALogo className="w-full h-full max-h-24" />
-        )}
+      {/* ปรับแก้ให้พื้นหลังโปร่งใส ดึงรูปจาก public/Logo NA.png ตรงๆ */}
+      <div className="relative group flex items-center justify-center mb-3 md:mb-0 md:mr-6 w-full md:w-auto h-24">
+        <img
+          src={clockLogoUrl || "/Logo NA.png"}
+          alt="Logo NA"
+          className="w-auto h-full max-h-24 object-contain"
+        />
 
         {/* Change Logo Upload Overlay */}
         <button

@@ -63,17 +63,17 @@ const getBoundsSegments = (data: any[], key: string, minLimit: number, maxLimit:
     if (val > maxLimit) {
       if (!currentSeg || currentSeg.type !== 'max') {
         if (currentSeg) segments.push(currentSeg);
-        currentSeg = { type: 'max', startKey: pt.timestampNum, endKey: pt.timestampNum, peakValue: val };
+        currentSeg = { type: 'max', startKey: pt.hourOffset, endKey: pt.hourOffset, peakValue: val };
       } else {
-        currentSeg.endKey = pt.timestampNum;
+        currentSeg.endKey = pt.hourOffset;
         currentSeg.peakValue = Math.max(currentSeg.peakValue, val);
       }
     } else if (val < minLimit) {
       if (!currentSeg || currentSeg.type !== 'min') {
         if (currentSeg) segments.push(currentSeg);
-        currentSeg = { type: 'min', startKey: pt.timestampNum, endKey: pt.timestampNum, peakValue: val };
+        currentSeg = { type: 'min', startKey: pt.hourOffset, endKey: pt.hourOffset, peakValue: val };
       } else {
-        currentSeg.endKey = pt.timestampNum;
+        currentSeg.endKey = pt.hourOffset;
         currentSeg.peakValue = Math.min(currentSeg.peakValue, val);
       }
     } else {
@@ -85,10 +85,10 @@ const getBoundsSegments = (data: any[], key: string, minLimit: number, maxLimit:
   return segments;
 };
 
-// แปลงชื่อวันให้เป็นตัวเลขลำดับในสัปดาห์ (จันทร์ = 1 ถึง อาทิตย์ = 7)
-const dayToNumber: Record<string, number> = {
-  'Mon': 1, 'Tue': 2, 'Wed': 3, 'Thu': 4, 'Fri': 5, 'Sat': 6, 'Sun': 7,
-  'จ.': 1, 'อ.': 2, 'พ.': 3, 'พฤ.': 4, 'ศ.': 5, 'ส.': 6, 'อา.': 7
+// ตารางแปลงวันให้เป็นลำดับ (จันทร์ = 0, อาทิตย์ = 6) เพื่อวาดลงบนแกน 0-168 ชั่วโมง
+const dayMap: Record<string, number> = {
+  'Mon': 0, 'Tue': 1, 'Wed': 2, 'Thu': 3, 'Fri': 4, 'Sat': 5, 'Sun': 6,
+  'จ.': 0, 'อ.': 1, 'พ.': 2, 'พฤ.': 3, 'ศ.': 4, 'ส.': 5, 'อา.': 6
 };
 
 export const ChartSection: React.FC<ChartSectionProps> = ({
@@ -103,48 +103,51 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
   const [autoMode, setAutoMode] = useState(true);
   const [brushRange, setBrushRange] = useState({ startIndex: 0, endIndex: 0 });
 
-  // 1. จัดเรียงข้อมูลให้อยู่ภายในรอบสัปดาห์ปัจจุบัน (จันทร์ 00:00 ถึง อาทิตย์ 23:59) และแทรกช่องว่างถ้าวัดระยะห่างเกิน 15 นาที
-  const chartData = useMemo(() => {
-    if (!history || history.length === 0) return [];
-
-    // แปลงข้อมูลประวัติทั้งหมดให้อยู่ในรูปตัวเลข Timestamp เรียงลำดับ
-    const mapped = history.map((pt) => {
-      const dayNum = dayToNumber[pt.day] || 1;
-      const [hh = 0, mm = 0, ss = 0] = pt.time.split(':').map(Number);
-      // คำนวณเป็นค่าตัวเลขสะสมในสัปดาห์ (วันจันทร์ 00:00 = 0 ถึง อาทิตย์ 24:00 = 168)
-      const timestampNum = (dayNum - 1) * 24 + hh + mm / 60 + ss / 3600;
-      return { ...pt, timestampNum };
-    }).sort((a, b) => a.timestampNum - b.timestampNum);
-
-    const structuredData: any[] = [];
-    
-    // บังคับจุดเริ่มต้นวันจันทร์ 00:00 และจุดสิ้นสุดวันอาทิตย์ 24:00 เพื่อล็อกกรอบเวลาแน่นอน
-    structuredData.push({ timestampNum: 0, day: 'Mon', time: '00:00:00', temperature: null, humidity: null });
-
-    for (let i = 0; i < mapped.length; i++) {
-      const curr = mapped[i];
-      
-      // ถ้ามีช่วงเวลาขาดหายไปเกิน 15 นาที (0.25 ชม.) ให้ใส่ค่า null เพื่อตัดเส้นกราฟให้ขาดออกจากกัน
-      if (structuredData.length > 0) {
-        const prev = structuredData[structuredData.length - 1];
-        if (prev.timestampNum !== undefined && (curr.timestampNum - prev.timestampNum > 0.25)) {
-          structuredData.push({
-            timestampNum: prev.timestampNum + 0.01,
-            time: '',
-            day: curr.day,
-            temperature: null,
-            humidity: null,
-          });
-        }
+  // 1. คัดกรองข้อมูลให้เหลือเฉพาะของ "สัปดาห์นี้" เท่านั้น (ป้องกันข้อมูลข้ามสัปดาห์มาโผล่)
+  const currentWeekHistory = useMemo(() => {
+    if (history.length === 0) return [];
+    const result = [];
+    for (let i = history.length - 1; i >= 0; i--) {
+      const pt = history[i];
+      if (i < history.length - 1 && pt.day === 'Sun' && history[i+1].day === 'Mon') {
+         break;
       }
-
-      structuredData.push(curr);
+      result.unshift(pt);
     }
-
-    structuredData.push({ timestampNum: 168, day: 'Sun', time: '23:59:59', temperature: null, humidity: null });
-
-    return structuredData;
+    return result;
   }, [history]);
+
+  // 2. แมปข้อมูลลงแกนชั่วโมง (0-168) และเพิ่มจุดเว้นว่าง (Data Gaps)
+  const chartData = useMemo(() => {
+    const dataWithGaps: any[] = [];
+    
+    // บังคับจุดเริ่มต้นที่วันจันทร์ 00:00 (เพื่อให้กราฟเริ่มที่ขอบซ้ายสุดเสมอ)
+    dataWithGaps.push({ hourOffset: 0, temperature: null, humidity: null });
+
+    currentWeekHistory.forEach((pt, idx) => {
+      const dayIdx = dayMap[pt.day] ?? 0;
+      const [hh, mm] = pt.time.split(':').map(Number);
+      const hourOffset = dayIdx * 24 + (hh || 0) + (mm || 0) / 60;
+      
+      dataWithGaps.push({ ...pt, hourOffset });
+      
+      if (idx < currentWeekHistory.length - 1) {
+         const nextPt = currentWeekHistory[idx + 1];
+         const nextDayIdx = dayMap[nextPt.day] ?? 0;
+         const [nhh, nmm] = nextPt.time.split(':').map(Number);
+         const nextOffset = nextDayIdx * 24 + (nhh || 0) + (nmm || 0) / 60;
+         
+         // ถ้าข้อมูลหายไปเกิน 15 นาที ให้ทำให้กราฟขาด
+         if ((nextOffset - hourOffset) > (15 / 60)) {
+            dataWithGaps.push({ hourOffset: hourOffset + 0.01, temperature: null, humidity: null });
+         }
+      }
+    });
+
+    // บังคับจุดสิ้นสุดที่วันอาทิตย์ 23:59 (เพื่อให้กราฟสุดที่ขอบขวาเสมอ)
+    dataWithGaps.push({ hourOffset: 168, temperature: null, humidity: null });
+    return dataWithGaps;
+  }, [currentWeekHistory]);
 
   useEffect(() => {
     if (chartData.length > 0) {
@@ -199,16 +202,21 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
     }
   };
 
-  const formatXAxisTick = (val: number) => {
-    if (val === 0) return 'จันทร์';
-    if (val === 24) return 'อังคาร';
-    if (val === 48) return 'พุธ';
-    if (val === 72) return 'พฤหัสฯ';
-    if (val === 96) return 'ศุกร์';
-    if (val === 120) return 'เสาร์';
-    if (val === 144) return 'อาทิตย์';
-    if (val === 168) return 'จันทร์ (สิ้นสุด)';
-    return '';
+  // คำนวณว่ากำลังซูมดูรายละเอียดอยู่หรือไม่ (ดูข้อมูลน้อยกว่า 80%)
+  const visibleRange = brushRange.endIndex - brushRange.startIndex;
+  const isZoomed = chartData.length > 10 && visibleRange < (chartData.length * 0.8);
+
+  const formatAdaptiveXAxisTick = (val: any) => {
+    const dayIdx = Math.floor(val / 24);
+    const hour = Math.floor(val % 24);
+    const labels = ['จันทร์', 'อังคาร', 'พุธ', 'พฤหัส', 'ศุกร์', 'เสาร์', 'อาทิตย์', ''];
+    
+    // ถ้าไม่ได้ซูม ให้แสดงเฉพาะชื่อวัน
+    if (!isZoomed || (hour === 0 && val % 1 === 0)) {
+       return labels[dayIdx] || '';
+    }
+    // ถ้าซูม ให้แสดงเวลาแทน
+    return `${String(hour).padStart(2, '0')}:00`;
   };
 
   return (
@@ -225,7 +233,7 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
         <div className="flex items-center space-x-2">
           <span className={`text-xs font-bold px-2.5 py-1 rounded-full border flex items-center gap-1 ${isDark ? 'bg-blue-950 border-blue-700 text-blue-300' : 'bg-blue-50 border-blue-300 text-blue-900'}`}>
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-            Realtime Chart Stream (Mon - Sun)
+            Realtime Chart Stream
           </span>
           {exportSuccessMsg && (
             <span className="text-xs font-semibold px-3 py-1 rounded bg-emerald-950 text-emerald-300 border border-emerald-600 flex items-center gap-1.5 animate-bounce">
@@ -236,12 +244,24 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          <div className={`flex items-center p-0.5 rounded-lg border text-xs font-semibold ${isDark ? 'bg-slate-900 border-slate-700' : 'bg-slate-100 border-slate-300'}`}>
+            <button disabled className="px-2 py-1 rounded text-slate-500 cursor-not-allowed opacity-50">
+              วันนี้ (Today)
+            </button>
+            <button className="px-2 py-1 rounded bg-blue-600 text-white font-bold shadow cursor-default">
+              7 วัน (1 Week)
+            </button>
+            <button disabled className="px-2 py-1 rounded text-slate-500 cursor-not-allowed opacity-50">
+              30 วัน (1 Month)
+            </button>
+          </div>
+
           <button onClick={handleOdooClick} className="flex items-center space-x-1.5 px-3 py-1.5 text-xs font-bold rounded-lg bg-blue-700 hover:bg-blue-600 text-white border border-blue-400 transition-all shadow-sm">
             <Globe className="w-3.5 h-3.5" />
             <span>Odoo</span>
           </button>
 
-          <button onClick={() => setAutoMode(!autoMode)} className={`flex items-center space-x-1.5 px-3 py-1.5 text-xs font-bold rounded-lg border transition-all shadow-sm ${autoMode ? 'bg-blue-600 hover:bg-blue-500 text-white border-blue-400' : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-600'}`}>
+          <button onClick={() => setAutoMode(!autoMode)} className={`flex items-center space-x-1.5 px-3 py-1.5 text-xs font-bold rounded-lg border transition-all shadow-sm ${autoMode ? 'bg-blue-600 hover:bg-blue-500 text-white border-blue-400 shadow-[0_0_8px_rgba(37,99,235,0.5)]' : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-600'}`}>
             <Clock className="w-3.5 h-3.5" />
             <span>Auto</span>
           </button>
@@ -256,9 +276,11 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
       {/* CHART 1: Temperature */}
       <div className="mb-6">
         <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
-          <h4 className={`text-xl font-bold flex items-center gap-2 ${isDark ? 'text-white' : 'text-slate-900'}`}>
-            Temperature <span className="text-xl">🌡️</span> <span className={`font-extrabold ${isDark ? 'text-blue-300' : 'text-blue-700'}`}>{tempTarget} ±{tempTol}°C</span>
-          </h4>
+          <div className="flex items-center space-x-2">
+            <h4 className={`text-xl font-bold flex items-center gap-2 ${isDark ? 'text-white' : 'text-slate-900'}`}>
+              Temperature <span className="text-xl">🌡️</span> <span className={`font-extrabold ${isDark ? 'text-blue-300' : 'text-blue-700'}`}>{tempTarget} ±{tempTol}°C</span>
+            </h4>
+          </div>
           <div className="flex items-center space-x-4 text-xs font-semibold">
             <div className="flex items-center space-x-1.5"><span className="w-3.5 h-2.5 rounded bg-blue-600"></span><span className={isDark ? 'text-slate-300' : 'text-slate-700'}>Temperature (°C)</span></div>
             <div className="flex items-center space-x-1.5"><span className="w-3 h-0.5 bg-red-500"></span><span className="text-red-500 font-bold">MIN ({tempMin}°C)</span></div>
@@ -273,10 +295,10 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
               
               <XAxis 
                 type="number"
-                dataKey="timestampNum" 
-                domain={[0, 168]}
-                ticks={[0, 24, 48, 72, 96, 120, 144, 168]}
-                tickFormatter={formatXAxisTick} 
+                dataKey="hourOffset" 
+                domain={['dataMin', 'dataMax']}
+                ticks={isZoomed ? undefined : [0, 24, 48, 72, 96, 120, 144, 168]}
+                tickFormatter={formatAdaptiveXAxisTick} 
                 tick={{ fill: isDark ? '#94A3B8' : '#334155', fontSize: 10, fontWeight: 'bold' }} 
                 stroke={isDark ? '#334155' : '#CBD5E1'} 
               />
@@ -294,23 +316,29 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
                 labelFormatter={(label, items) => {
                   const pt = items[0]?.payload;
                   if (!pt || !pt.time) return '';
-                  return `⏱️ วัน: ${pt.day} | เวลา: ${pt.time} น.`;
+                  return `⏱️ เวลา: ${pt.time} น. (${pt.day} ${pt.dateStr ? '- ' + pt.dateStr : ''})`;
                 }}
               />
               
               {tempSegments.map((seg, idx) => (
                 <React.Fragment key={`temp-seg-${idx}`}>
                   <ReferenceArea x1={seg.startKey} x2={seg.endKey} fill={seg.type === 'max' ? '#EF4444' : '#3B82F6'} fillOpacity={0.15} />
+                  <ReferenceArea
+                    x1={seg.startKey} x2={seg.endKey}
+                    y1={seg.type === 'max' ? tempMax : tempMin}
+                    y2={seg.type === 'max' ? Math.min(seg.peakValue + 1.8, 33.5) : Math.max(seg.peakValue - 1.8, 18.5)}
+                    stroke={seg.type === 'max' ? '#EF4444' : '#3B82F6'} strokeWidth={2} fill="none"
+                    label={{ position: seg.type === 'max' ? 'top' : 'bottom', value: 'No Activity', fill: seg.type === 'max' ? '#EF4444' : '#3B82F6', fontSize: 12, fontWeight: 'bold' }}
+                  />
                 </React.Fragment>
               ))}
 
               <ReferenceLine y={tempMin} stroke="#EF4444" strokeWidth={2} label={renderMinLabel} />
               <ReferenceLine y={tempMax} stroke="#EF4444" strokeWidth={2} label={renderMaxLabel} />
               
-              {/* ใช้ connectNulls={false} เพื่อให้หากไม่มีข้อมูล ช่วงเวลานั้นเส้นกราฟจะขาดหายไปทันที */}
               <Line type="monotone" connectNulls={false} dataKey="temperature" stroke="#2563EB" strokeWidth={3} dot={false} activeDot={{ r: 6, fill: '#60A5FA' }} />
               
-              <Brush dataKey="timestampNum" height={25} stroke="#2563EB" fill={isDark ? '#0F172A' : '#F1F5F9'} tickFormatter={() => ''} onChange={(range: any) => setBrushRange(range)} />
+              <Brush dataKey="hourOffset" height={25} stroke="#2563EB" fill={isDark ? '#0F172A' : '#F1F5F9'} tickFormatter={() => ''} onChange={(range: any) => setBrushRange(range)} />
             </LineChart>
           </ResponsiveContainer>
         </div>
@@ -319,9 +347,11 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
       {/* CHART 2: Humidity */}
       <div>
         <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
-          <h4 className={`text-xl font-bold flex items-center gap-2 ${isDark ? 'text-white' : 'text-slate-900'}`}>
-            Humidity <span className="text-xl">💧</span> <span className={`font-extrabold ${isDark ? 'text-blue-300' : 'text-blue-700'}`}>{humTarget} ±{humTol}%</span>
-          </h4>
+          <div className="flex items-center space-x-2">
+            <h4 className={`text-xl font-bold flex items-center gap-2 ${isDark ? 'text-white' : 'text-slate-900'}`}>
+              Humidity <span className="text-xl">💧</span> <span className={`font-extrabold ${isDark ? 'text-blue-300' : 'text-blue-700'}`}>{humTarget} ±{humTol}%</span>
+            </h4>
+          </div>
           <div className="flex items-center space-x-4 text-xs font-semibold">
             <div className="flex items-center space-x-1.5"><span className="w-3.5 h-2.5 rounded bg-blue-600"></span><span className={isDark ? 'text-slate-300' : 'text-slate-700'}>Humidity (%)</span></div>
             <div className="flex items-center space-x-1.5"><span className="w-3 h-0.5 bg-red-500"></span><span className="text-red-500 font-bold">MIN ({humMin}%)</span></div>
@@ -336,10 +366,10 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
               
               <XAxis 
                 type="number"
-                dataKey="timestampNum" 
-                domain={[0, 168]}
-                ticks={[0, 24, 48, 72, 96, 120, 144, 168]}
-                tickFormatter={formatXAxisTick} 
+                dataKey="hourOffset" 
+                domain={['dataMin', 'dataMax']}
+                ticks={isZoomed ? undefined : [0, 24, 48, 72, 96, 120, 144, 168]}
+                tickFormatter={formatAdaptiveXAxisTick} 
                 tick={{ fill: isDark ? '#94A3B8' : '#334155', fontSize: 10, fontWeight: 'bold' }} 
                 stroke={isDark ? '#334155' : '#CBD5E1'} 
               />
@@ -357,23 +387,29 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
                 labelFormatter={(label, items) => {
                   const pt = items[0]?.payload;
                   if (!pt || !pt.time) return '';
-                  return `⏱️ วัน: ${pt.day} | เวลา: ${pt.time} น.`;
+                  return `⏱️ เวลา: ${pt.time} น. (${pt.day} ${pt.dateStr ? '- ' + pt.dateStr : ''})`;
                 }}
               />
 
               {humSegments.map((seg, idx) => (
                 <React.Fragment key={`hum-seg-${idx}`}>
                   <ReferenceArea x1={seg.startKey} x2={seg.endKey} fill={seg.type === 'max' ? '#EF4444' : '#3B82F6'} fillOpacity={0.15} />
+                  <ReferenceArea
+                    x1={seg.startKey} x2={seg.endKey}
+                    y1={seg.type === 'max' ? humMax : humMin}
+                    y2={seg.type === 'max' ? Math.min(seg.peakValue + 4, 94) : Math.max(seg.peakValue - 4, 31)}
+                    stroke={seg.type === 'max' ? '#EF4444' : '#3B82F6'} strokeWidth={2} fill="none"
+                    label={{ position: seg.type === 'max' ? 'top' : 'bottom', value: 'No Activity', fill: seg.type === 'max' ? '#EF4444' : '#3B82F6', fontSize: 12, fontWeight: 'bold' }}
+                  />
                 </React.Fragment>
               ))}
 
               <ReferenceLine y={humMin} stroke="#EF4444" strokeWidth={2} label={renderMinLabel} />
               <ReferenceLine y={humMax} stroke="#EF4444" strokeWidth={2} label={renderMaxLabel} />
               
-              {/* ใช้ connectNulls={false} เพื่อให้หากไม่มีข้อมูล ช่วงเวลานั้นเส้นกราฟจะขาดหายไปทันที */}
-              <Line type="monotone" connectNulls={false} dataKey="humidity" stroke="#0284C7" strokeWidth={3} dot={false} activeDot={{ r: 6, fill: '#7DD3FC'}}] />
+              <Line type="monotone" connectNulls={false} dataKey="humidity" stroke="#0284C7" strokeWidth={3} dot={false} activeDot={{ r: 6, fill: '#7DD3FC' }} />
               
-              <Brush dataKey="timestampNum" height={25} stroke="#0284C7" fill={isDark ? '#0F172A' : '#F1F5F9'} tickFormatter={() => ''} onChange={(range: any) => setBrushRange(range)} />
+              <Brush dataKey="hourOffset" height={25} stroke="#0284C7" fill={isDark ? '#0F172A' : '#F1F5F9'} tickFormatter={() => ''} onChange={(range: any) => setBrushRange(range)} />
             </LineChart>
           </ResponsiveContainer>
         </div>

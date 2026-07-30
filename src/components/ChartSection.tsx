@@ -302,7 +302,12 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
                 stroke={isDark ? '#334155' : '#CBD5E1'} 
                 minTickGap={10} 
               />
-              <YAxis domain={[18, 34]} tick={{ fill: isDark ? '#94A3B8' : '#334155', fontSize: 11, fontWeight: 'bold' }} stroke={isDark ? '#334155' : '#CBD5E1'} />
+              <YAxis 
+                domain={[18, 32]} 
+                ticks={[18, 20, 22, 24, 26, 28, 30, 32]} 
+                tick={{ fill: isDark ? '#94A3B8' : '#334155', fontSize: 11, fontWeight: 'bold' }} 
+                stroke={isDark ? '#334155' : '#CBD5E1'} 
+              />
               
               <Tooltip 
                 contentStyle={{ backgroundColor: isDark ? '#0F172A' : '#FFFFFF', borderColor: '#2563EB', borderRadius: '8px', color: isDark ? '#FFF' : '#0F172A', fontSize: '12px' }}
@@ -364,7 +369,12 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
                 stroke={isDark ? '#334155' : '#CBD5E1'} 
                 minTickGap={10} 
               />
-              <YAxis domain={[30, 95]} tick={{ fill: isDark ? '#94A3B8' : '#334155', fontSize: 11, fontWeight: 'bold' }} stroke={isDark ? '#334155' : '#CBD5E1'} />
+              <YAxis 
+                domain={[30, 90]} 
+                ticks={[30, 40, 50, 60, 70, 80, 90]} 
+                tick={{ fill: isDark ? '#94A3B8' : '#334155', fontSize: 11, fontWeight: 'bold' }} 
+                stroke={isDark ? '#334155' : '#CBD5E1'} 
+              />
               
               <Tooltip 
                 contentStyle={{ backgroundColor: isDark ? '#0F172A' : '#FFFFFF', borderColor: '#0284C7', borderRadius: '8px', color: isDark ? '#FFF' : '#0F172A', fontSize: '12px' }}

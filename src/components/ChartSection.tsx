@@ -112,59 +112,59 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
       daysWithData.add(dayMap[pt.day] ?? 0);
     });
 
-    // 1. เติมกรอบเวลา (Grid) เฉพาะ "วันที่ไม่มีข้อมูล" เพื่อตัดเส้นกราฟไม่ให้ลากข้ามวัน 
-    // และบังคับให้กราฟมีจุดหนาแน่นพอที่แกน Y และระบบ Zoom จะทำงานได้ตามปกติ
-    for (let day = 0; day < 7; day++) {
-      if (!daysWithData.has(day)) {
-        for (let hour = 0; hour < 24; hour += 0.5) {
-          dataPoints.push({
-            hourOffset: day * 24 + hour,
-            temperature: null,
-            humidity: null,
-            time: '',
-            day: '',
-            dateStr: ''
-          });
-        }
-      }
+    // 1. สร้างโครงสร้างเวลาพื้นฐาน 7 วัน (ทุก 30 นาที) เป็นค่าว่าง (null)
+    // เพื่อรับประกันว่าแกน X, แกน Y, Brush และเส้นขอบเขต ทำงานได้สมบูรณ์เสมอแม้ไม่มีข้อมูล
+    for (let h = 0; h <= 168; h += 0.5) {
+      dataPoints.push({
+        hourOffset: h,
+        temperature: null,
+        humidity: null,
+        time: '',
+        day: '',
+        dateStr: '',
+        isDummy: true
+      });
     }
 
-    // 2. เติมข้อมูลจริงจาก History โดยใช้เวลาเป๊ะๆ (ไม่ปัดเศษ)
+    // 2. แทรกข้อมูลจริงตามเวลาจริง (เป๊ะๆ ไม่ปัดเศษ)
     history.forEach((pt) => {
       const dayIdx = dayMap[pt.day] ?? 0;
       const [hh, mm] = (pt.time || '00:00').split(':').map(Number);
-      const hourOffset = dayIdx * 24 + (hh || 0) + (mm || 0) / 60;
-      
-      if (hourOffset >= 0 && hourOffset <= 168) {
+      const exactHourOffset = dayIdx * 24 + (hh || 0) + (mm || 0) / 60;
+
+      if (exactHourOffset >= 0 && exactHourOffset <= 168) {
         dataPoints.push({
-          hourOffset: hourOffset,
+          hourOffset: exactHourOffset,
           temperature: pt.temperature,
           humidity: pt.humidity,
           time: pt.time,
           day: pt.day,
-          dateStr: pt.dateStr
+          dateStr: pt.dateStr,
+          isDummy: false
         });
       }
     });
 
-    // ล็อกหัวท้ายตายตัว 0 และ 168 เพื่อบังคับให้แสดงกรอบ 7 วันเสมอ
-    dataPoints.push({ hourOffset: 0, temperature: null, humidity: null, time: '', day: '', dateStr: '' });
-    dataPoints.push({ hourOffset: 168, temperature: null, humidity: null, time: '', day: '', dateStr: '' });
+    // 3. เรียงลำดับจากเวลาน้อยไปมาก
+    dataPoints.sort((a, b) => a.hourOffset - b.hourOffset);
 
-    // เรียงลำดับจากเวลาน้อยไปมาก
-    const sorted = dataPoints.sort((a, b) => a.hourOffset - b.hourOffset);
+    // 4. กรองจุดที่ทำให้เส้นขาดออก (เฉพาะวันที่มีข้อมูล)
+    const finalData = dataPoints.filter((pt) => {
+      if (!pt.isDummy) return true; // ข้อมูลจริงเก็บไว้เสมอ
 
-    // กรองจุดที่เวลาซ้ำกันออก (ป้องกันบั๊กเวลากด Simulator รัวๆ ในนาทีเดียวกัน)
-    const unique = [];
-    let lastOffset = -1;
-    for (const pt of sorted) {
-      if (pt.hourOffset !== lastOffset) {
-        unique.push(pt);
-        lastOffset = pt.hourOffset;
-      }
-    }
+      const currentDay = Math.floor(pt.hourOffset / 24);
+      
+      // ถ้านี่คือจุดรอยต่อข้ามวัน (00:00) ให้เก็บไว้เพื่อตัดเส้นไม่ให้ลากข้ามวัน
+      if (pt.hourOffset % 24 === 0) return true;
 
-    return unique;
+      // ถ้าวันนั้นมีข้อมูลจริงอยู่แล้ว ให้ลบจุด Dummy (null) ระหว่างวันทิ้ง เพื่อให้เส้นกราฟเชื่อมกันสนิทสมูทที่สุด
+      if (daysWithData.has(currentDay)) return false;
+
+      // ถ้าวันนั้นไม่มีข้อมูลเลย ให้เก็บ Dummy ไว้เพื่อพยุงแกน X และระบบซูม (Brush) ให้สมมาตรและแสดงผลปกติ
+      return true;
+    });
+
+    return finalData;
   }, [history]);
 
   useEffect(() => {

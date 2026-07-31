@@ -85,7 +85,6 @@ const getBoundsSegments = (data: any[], key: string, minLimit: number, maxLimit:
   return segments;
 };
 
-// ลำดับวันมาตรฐานสากล: จันทร์ = 0, อังคาร = 1, พุธ = 2, พฤหัส = 3, ศุกร์ = 4, เสาร์ = 5, อาทิตย์ = 6
 const dayMap: Record<string, number> = {
   'Mon': 0, 'Tue': 1, 'Wed': 2, 'Thu': 3, 'Fri': 4, 'Sat': 5, 'Sun': 6,
   'จ.': 0, 'อ.': 1, 'พ.': 2, 'พฤ.': 3, 'ศ.': 4, 'ส.': 5, 'อา.': 6,
@@ -104,16 +103,13 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
   const [autoMode, setAutoMode] = useState(true);
   const [brushRange, setBrushRange] = useState({ startIndex: 0, endIndex: 0 });
 
-  // 1. จัดเตรียมโครงสร้างแกนเวลาแบบล็อกตายตัว 7 วันเต็ม (จันทร์ 00:00 ถึง อาทิตย์ 23:59)
   const chartData = useMemo(() => {
     const pointsMap = new Map<number, any>();
 
-    // สร้างจุดโครงสร้าง 0 ถึง 168 ชั่วโมง (ทุกๆ ครึ่งชั่วโมง)
     for (let h = 0; h <= 168; h += 0.5) {
       pointsMap.set(h, { hourOffset: h, temperature: null, humidity: null, time: '', day: '', dateStr: '' });
     }
 
-    // นำข้อมูลจริงลงไปทับในช่องเวลาที่ตรงกัน
     history.forEach((pt) => {
       const dayIdx = dayMap[pt.day] ?? 0;
       const [hh, mm] = (pt.time || '00:00').split(':').map(Number);
@@ -194,7 +190,6 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
   const formatAdaptiveXAxisTick = (val: any) => {
     const dayIdx = Math.floor(val / 24);
     const hour = Math.floor(val % 24);
-    // เรียงลำดับจาก จันทร์ ถึง อาทิตย์ ตรงตามมาตรฐาน
     const labels = ['จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์', 'อาทิตย์', ''];
     
     if (!isZoomed || (hour === 0 && val % 1 === 0)) {
@@ -257,7 +252,6 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
         </div>
       </div>
 
-      {/* CHART 1: Temperature */}
       <div className="mb-6">
         <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
           <div className="flex items-center space-x-2">
@@ -328,7 +322,6 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
         </div>
       </div>
 
-      {/* CHART 2: Humidity */}
       <div>
         <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
           <div className="flex items-center space-x-2">

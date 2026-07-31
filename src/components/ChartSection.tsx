@@ -85,10 +85,11 @@ const getBoundsSegments = (data: any[], key: string, minLimit: number, maxLimit:
   return segments;
 };
 
-// ตารางแปลงวันให้เป็นลำดับ (จันทร์ = 0 ถึง อาทิตย์ = 6)
+// ลำดับวันมาตรฐานสากล: จันทร์ = 0, อังคาร = 1, พุธ = 2, พฤหัส = 3, ศุกร์ = 4, เสาร์ = 5, อาทิตย์ = 6
 const dayMap: Record<string, number> = {
   'Mon': 0, 'Tue': 1, 'Wed': 2, 'Thu': 3, 'Fri': 4, 'Sat': 5, 'Sun': 6,
-  'จ.': 0, 'อ.': 1, 'พ.': 2, 'พฤ.': 3, 'ศ.': 4, 'ส.': 5, 'อา.': 6
+  'จ.': 0, 'อ.': 1, 'พ.': 2, 'พฤ.': 3, 'ศ.': 4, 'ส.': 5, 'อา.': 6,
+  'Monday': 0, 'Tuesday': 1, 'Wednesday': 2, 'Thursday': 3, 'Friday': 4, 'Saturday': 5, 'Sunday': 6
 };
 
 export const ChartSection: React.FC<ChartSectionProps> = ({
@@ -105,26 +106,21 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
 
   // 1. จัดเตรียมโครงสร้างแกนเวลาแบบล็อกตายตัว 7 วันเต็ม (จันทร์ 00:00 ถึง อาทิตย์ 23:59)
   const chartData = useMemo(() => {
-    // สร้างโครงสร้างพื้นฐาน 7 วัน (ทุกๆ 1 ชั่วโมง หรือตามจุดที่มีข้อมูลจริง)
-    // เพื่อให้แกน X ล็อก 0 - 168 ชั่วโมง (จันทร์ถึงอาทิตย์) เสมอ
     const pointsMap = new Map<number, any>();
 
-    // เติมโครงสร้างหลัก 0 ถึง 168 ชั่วโมงให้ครบถ้วน เพื่อให้สเกลวันจันทร์-อาทิตย์ล็อกนิ่งไม่ขยับ
-    // โดยกำหนดค่าเริ่มต้นเป็น null (ช่วงไหนไม่มีข้อมูล เส้นกราฟจะขาดหายไป)
+    // สร้างจุดโครงสร้าง 0 ถึง 168 ชั่วโมง (ทุกๆ ครึ่งชั่วโมง)
     for (let h = 0; h <= 168; h += 0.5) {
       pointsMap.set(h, { hourOffset: h, temperature: null, humidity: null, time: '', day: '', dateStr: '' });
     }
 
-    // นำข้อมูลจริงที่ส่งเข้ามาลงไปทับในช่องเวลาที่ตรงกัน
+    // นำข้อมูลจริงลงไปทับในช่องเวลาที่ตรงกัน
     history.forEach((pt) => {
       const dayIdx = dayMap[pt.day] ?? 0;
-      const [hh, mm] = pt.time.split(':').map(Number);
-      // คำนวณตำแหน่งชั่วโมงรวมในรอบสัปดาห์ (0 - 168)
+      const [hh, mm] = (pt.time || '00:00').split(':').map(Number);
       const hourOffset = dayIdx * 24 + (hh || 0) + (mm || 0) / 60;
       
-      // ค้นหาตำแหน่งที่ใกล้เคียงที่สุดใน Map (ปัดเศษเข้าสู่ช่วงครึ่งชั่วโมงหรือใส่ตรงๆ)
       const roundedKey = Math.round(hourOffset * 2) / 2;
-      if (pointsMap.has(roundedKey) || (roundedKey >= 0 && roundedKey <= 168)) {
+      if (roundedKey >= 0 && roundedKey <= 168) {
         pointsMap.set(roundedKey, {
           hourOffset: roundedKey,
           temperature: pt.temperature,
@@ -198,7 +194,8 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
   const formatAdaptiveXAxisTick = (val: any) => {
     const dayIdx = Math.floor(val / 24);
     const hour = Math.floor(val % 24);
-    const labels = ['จันทร์', 'อังคาร', 'พุธ', 'พฤหัส', 'ศุกร์', 'เสาร์', 'อาทิตย์', ''];
+    // เรียงลำดับจาก จันทร์ ถึง อาทิตย์ ตรงตามมาตรฐาน
+    const labels = ['จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์', 'อาทิตย์', ''];
     
     if (!isZoomed || (hour === 0 && val % 1 === 0)) {
        return labels[dayIdx] || '';
@@ -302,7 +299,7 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
                 formatter={(val: any) => [`${val} °C`, 'Temperature']}
                 labelFormatter={(label, items) => {
                   const pt = items[0]?.payload;
-                  if (!pt || !pt.time) return `เวลาชั่วโมงที่: ${label}`;
+                  if (!pt || !pt.time) return `ชั่วโมงที่: ${label}`;
                   return `⏱️ เวลา: ${pt.time} น. (${pt.day} ${pt.dateStr ? '- ' + pt.dateStr : ''})`;
                 }}
               />
@@ -323,7 +320,6 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
               <ReferenceLine y={tempMin} stroke="#EF4444" strokeWidth={2} label={renderMinLabel} />
               <ReferenceLine y={tempMax} stroke="#EF4444" strokeWidth={2} label={renderMaxLabel} />
               
-              {/* ใช้ connectNulls={false} เพื่อให้เมื่อไม่มีข้อมูล เส้นกราฟจะขาดหายไปทันที */}
               <Line type="monotone" connectNulls={false} dataKey="temperature" stroke="#2563EB" strokeWidth={3} dot={false} activeDot={{ r: 6, fill: '#60A5FA' }} />
               
               <Brush dataKey="hourOffset" height={25} stroke="#2563EB" fill={isDark ? '#0F172A' : '#F1F5F9'} tickFormatter={() => ''} onChange={(range: any) => setBrushRange(range)} />
@@ -374,7 +370,7 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
                 formatter={(val: any) => [`${val} %`, 'Humidity']}
                 labelFormatter={(label, items) => {
                   const pt = items[0]?.payload;
-                  if (!pt || !pt.time) return `เวลาชั่วโมงที่: ${label}`;
+                  if (!pt || !pt.time) return `ชั่วโมงที่: ${label}`;
                   return `⏱️ เวลา: ${pt.time} น. (${pt.day} ${pt.dateStr ? '- ' + pt.dateStr : ''})`;
                 }}
               />
@@ -395,7 +391,6 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
               <ReferenceLine y={humMin} stroke="#EF4444" strokeWidth={2} label={renderMinLabel} />
               <ReferenceLine y={humMax} stroke="#EF4444" strokeWidth={2} label={renderMaxLabel} />
               
-              {/* ใช้ connectNulls={false} เพื่อให้เมื่อไม่มีข้อมูล เส้นกราฟจะขาดหายไปทันที */}
               <Line type="monotone" connectNulls={false} dataKey="humidity" stroke="#0284C7" strokeWidth={3} dot={false} activeDot={{ r: 6, fill: '#7DD3FC' }} />
               
               <Brush dataKey="hourOffset" height={25} stroke="#0284C7" fill={isDark ? '#0F172A' : '#F1F5F9'} tickFormatter={() => ''} onChange={(range: any) => setBrushRange(range)} />

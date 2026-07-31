@@ -102,6 +102,7 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
   const [exportSuccessMsg, setExportSuccessMsg] = useState<string | null>(null);
   const [autoMode, setAutoMode] = useState(true);
   const [brushRange, setBrushRange] = useState({ startIndex: 0, endIndex: 0 });
+  const isInitialMount = useRef(true);
 
   const chartData = useMemo(() => {
     const dataPoints: any[] = [];
@@ -167,11 +168,19 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
     return finalData;
   }, [history]);
 
+  // ควบคุมการซูมและโหมด Auto
   useEffect(() => {
     if (chartData.length > 0) {
-      setBrushRange({ startIndex: 0, endIndex: chartData.length - 1 });
+      if (isInitialMount.current) {
+        // โหลดครั้งแรกกำหนดให้เต็มช่วง
+        setBrushRange({ startIndex: 0, endIndex: chartData.length - 1 });
+        isInitialMount.current = false;
+      } else if (autoMode) {
+        // ถ้าเปิด Auto อยู่ และมีข้อมูลใหม่เข้ามา ให้ขยับช่วงแสดงผลตามข้อมูลล่าสุดอัตโนมัติ
+        setBrushRange({ startIndex: 0, endIndex: chartData.length - 1 });
+      }
     }
-  }, [chartData.length]);
+  }, [chartData.length, autoMode]);
 
   const tempTarget = telemetry.tempTarget || 23;
   const tempTol = telemetry.tempTolerance || 3;
@@ -352,7 +361,25 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
               
               <Line type="monotone" connectNulls={false} dataKey="temperature" stroke="#2563EB" strokeWidth={3} dot={false} activeDot={{ r: 6, fill: '#60A5FA' }} />
               
-              <Brush dataKey="hourOffset" height={25} stroke="#2563EB" fill={isDark ? '#0F172A' : '#F1F5F9'} tickFormatter={() => ''} onChange={(range: any) => setBrushRange(range)} />
+              <Brush 
+                dataKey="hourOffset" 
+                height={25} 
+                stroke="#2563EB" 
+                fill={isDark ? '#0F172A' : '#F1F5F9'} 
+                tickFormatter={() => ''} 
+                startIndex={brushRange.startIndex}
+                endIndex={brushRange.endIndex}
+                onChange={(range: any) => {
+                  if (range && typeof range.startIndex === 'number' && typeof range.endIndex === 'number') {
+                    setBrushRange(range);
+                    // ถ้าผู้ใช้ลากซูมเข้ามาดูช่วงเวลาเฉพาะ ให้ปิด Auto อัตโนมัติ เพื่อไม่ให้กราฟดีดกลับ
+                    const isFullRange = range.startIndex === 0 && range.endIndex >= chartData.length - 2;
+                    if (!isFullRange) {
+                      setAutoMode(false);
+                    }
+                  }
+                }} 
+              />
             </LineChart>
           </ResponsiveContainer>
         </div>
@@ -422,7 +449,24 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
               
               <Line type="monotone" connectNulls={false} dataKey="humidity" stroke="#0284C7" strokeWidth={3} dot={false} activeDot={{ r: 6, fill: '#7DD3FC' }} />
               
-              <Brush dataKey="hourOffset" height={25} stroke="#0284C7" fill={isDark ? '#0F172A' : '#F1F5F9'} tickFormatter={() => ''} onChange={(range: any) => setBrushRange(range)} />
+              <Brush 
+                dataKey="hourOffset" 
+                height={25} 
+                stroke="#0284C7" 
+                fill={isDark ? '#0F172A' : '#F1F5F9'} 
+                tickFormatter={() => ''} 
+                startIndex={brushRange.startIndex}
+                endIndex={brushRange.endIndex}
+                onChange={(range: any) => {
+                  if (range && typeof range.startIndex === 'number' && typeof range.endIndex === 'number') {
+                    setBrushRange(range);
+                    const isFullRange = range.startIndex === 0 && range.endIndex >= chartData.length - 2;
+                    if (!isFullRange) {
+                      setAutoMode(false);
+                    }
+                  }
+                }} 
+              />
             </LineChart>
           </ResponsiveContainer>
         </div>

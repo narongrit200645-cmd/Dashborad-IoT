@@ -293,7 +293,33 @@ export default function App() {
 
   // Update telemetry locally & broadcast
   const handleUpdateTelemetry = async (updated: Partial<TelemetryData>) => {
+    // 1. อัปเดตตัวเลขหน้าปัด
     setTelemetry((prev) => ({ ...prev, ...updated }));
+
+    // 2. 🌟 เพิ่มโค้ดส่วนนี้: อัปเดตจุดบนกราฟทันทีเมื่อกด Simulator
+    if (updated.temperature !== undefined || updated.humidity !== undefined) {
+      setHistory((prevHistory) => {
+        const now = new Date();
+        const timeStr = now.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
+        const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        const dayStr = days[now.getDay()];
+        const dateStr = now.toLocaleDateString('th-TH');
+
+        const newPoint = {
+          time: timeStr,
+          day: dayStr,
+          dateStr: dateStr,
+          // ดึงค่าใหม่ที่กดจำลองมาใส่กราฟ ถ้าไม่มีให้ใช้ค่าเดิม
+          temperature: updated.temperature !== undefined ? updated.temperature : telemetry.temperature,
+          humidity: updated.humidity !== undefined ? updated.humidity : telemetry.humidity,
+        };
+
+        // สร้างจุดใหม่ต่อท้าย และเก็บย้อนหลังไม่เกิน 200 จุด
+        return [...prevHistory, newPoint].slice(-200);
+      });
+    }
+
+    // 3. ส่งข้อมูลเข้า API
     try {
       await fetch('/api/iot/update', {
         method: 'POST',

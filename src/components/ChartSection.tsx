@@ -107,13 +107,35 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
     const dataPoints: any[] = [];
     const daysWithData = new Set<number>();
 
+    // หาว่าวันไหน (0-6) ที่มีข้อมูลส่งเข้ามาบ้าง
+    history.forEach((pt) => {
+      daysWithData.add(dayMap[pt.day] ?? 0);
+    });
+
+    // 1. เติมกรอบเวลา (Grid) เฉพาะ "วันที่ไม่มีข้อมูล" เพื่อตัดเส้นกราฟไม่ให้ลากข้ามวัน 
+    // และบังคับให้กราฟมีจุดหนาแน่นพอที่แกน Y และระบบ Zoom จะทำงานได้ตามปกติ
+    for (let day = 0; day < 7; day++) {
+      if (!daysWithData.has(day)) {
+        for (let hour = 0; hour < 24; hour += 0.5) {
+          dataPoints.push({
+            hourOffset: day * 24 + hour,
+            temperature: null,
+            humidity: null,
+            time: '',
+            day: '',
+            dateStr: ''
+          });
+        }
+      }
+    }
+
+    // 2. เติมข้อมูลจริงจาก History โดยใช้เวลาเป๊ะๆ (ไม่ปัดเศษ)
     history.forEach((pt) => {
       const dayIdx = dayMap[pt.day] ?? 0;
       const [hh, mm] = (pt.time || '00:00').split(':').map(Number);
       const hourOffset = dayIdx * 24 + (hh || 0) + (mm || 0) / 60;
       
       if (hourOffset >= 0 && hourOffset <= 168) {
-        daysWithData.add(dayIdx);
         dataPoints.push({
           hourOffset: hourOffset,
           temperature: pt.temperature,
@@ -125,25 +147,24 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
       }
     });
 
-    // วันไหนที่ไม่มีข้อมูลให้แทรกค่า null เพื่อไม่ให้เส้นแสดงและเชื่อมลากข้ามวัน
-    for (let i = 0; i < 7; i++) {
-      if (!daysWithData.has(i)) {
-        dataPoints.push({
-          hourOffset: i * 24 + 12,
-          temperature: null,
-          humidity: null,
-          time: '',
-          day: '',
-          dateStr: ''
-        });
-      }
-    }
-
-    // ล็อกกราฟให้อยู่ในขอบเขต 7 วัน (จันทร์ 00:00 ถึง อาทิตย์ 23:59)
+    // ล็อกหัวท้ายตายตัว 0 และ 168 เพื่อบังคับให้แสดงกรอบ 7 วันเสมอ
     dataPoints.push({ hourOffset: 0, temperature: null, humidity: null, time: '', day: '', dateStr: '' });
     dataPoints.push({ hourOffset: 168, temperature: null, humidity: null, time: '', day: '', dateStr: '' });
 
-    return dataPoints.sort((a, b) => a.hourOffset - b.hourOffset);
+    // เรียงลำดับจากเวลาน้อยไปมาก
+    const sorted = dataPoints.sort((a, b) => a.hourOffset - b.hourOffset);
+
+    // กรองจุดที่เวลาซ้ำกันออก (ป้องกันบั๊กเวลากด Simulator รัวๆ ในนาทีเดียวกัน)
+    const unique = [];
+    let lastOffset = -1;
+    for (const pt of sorted) {
+      if (pt.hourOffset !== lastOffset) {
+        unique.push(pt);
+        lastOffset = pt.hourOffset;
+      }
+    }
+
+    return unique;
   }, [history]);
 
   useEffect(() => {

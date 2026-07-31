@@ -104,21 +104,18 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
   const [brushRange, setBrushRange] = useState({ startIndex: 0, endIndex: 0 });
 
   const chartData = useMemo(() => {
-    const pointsMap = new Map<number, any>();
-
-    for (let h = 0; h <= 168; h += 0.5) {
-      pointsMap.set(h, { hourOffset: h, temperature: null, humidity: null, time: '', day: '', dateStr: '' });
-    }
+    const dataPoints: any[] = [];
+    const daysWithData = new Set<number>();
 
     history.forEach((pt) => {
       const dayIdx = dayMap[pt.day] ?? 0;
       const [hh, mm] = (pt.time || '00:00').split(':').map(Number);
       const hourOffset = dayIdx * 24 + (hh || 0) + (mm || 0) / 60;
       
-      const roundedKey = Math.round(hourOffset * 2) / 2;
-      if (roundedKey >= 0 && roundedKey <= 168) {
-        pointsMap.set(roundedKey, {
-          hourOffset: roundedKey,
+      if (hourOffset >= 0 && hourOffset <= 168) {
+        daysWithData.add(dayIdx);
+        dataPoints.push({
+          hourOffset: hourOffset,
           temperature: pt.temperature,
           humidity: pt.humidity,
           time: pt.time,
@@ -128,7 +125,25 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
       }
     });
 
-    return Array.from(pointsMap.values()).sort((a, b) => a.hourOffset - b.hourOffset);
+    // วันไหนที่ไม่มีข้อมูลให้แทรกค่า null เพื่อไม่ให้เส้นแสดงและเชื่อมลากข้ามวัน
+    for (let i = 0; i < 7; i++) {
+      if (!daysWithData.has(i)) {
+        dataPoints.push({
+          hourOffset: i * 24 + 12,
+          temperature: null,
+          humidity: null,
+          time: '',
+          day: '',
+          dateStr: ''
+        });
+      }
+    }
+
+    // ล็อกกราฟให้อยู่ในขอบเขต 7 วัน (จันทร์ 00:00 ถึง อาทิตย์ 23:59)
+    dataPoints.push({ hourOffset: 0, temperature: null, humidity: null, time: '', day: '', dateStr: '' });
+    dataPoints.push({ hourOffset: 168, temperature: null, humidity: null, time: '', day: '', dateStr: '' });
+
+    return dataPoints.sort((a, b) => a.hourOffset - b.hourOffset);
   }, [history]);
 
   useEffect(() => {

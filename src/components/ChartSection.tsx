@@ -101,6 +101,7 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
   const [isExporting, setIsExporting] = useState(false);
   const [exportSuccessMsg, setExportSuccessMsg] = useState<string | null>(null);
   const [autoMode, setAutoMode] = useState(true);
+  const [domain, setDomain] = useState({ left: 0, right: 168 });
   const [brushRange, setBrushRange] = useState({ startIndex: 0, endIndex: 0 });
   const isInitialMount = useRef(true);
 
@@ -168,19 +169,12 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
     return finalData;
   }, [history]);
 
-  // ควบคุมการซูมและโหมด Auto
+  // ควบคุมการแสดงผลตามโหมด Auto
   useEffect(() => {
-    if (chartData.length > 0) {
-      if (isInitialMount.current) {
-        // โหลดครั้งแรกกำหนดให้เต็มช่วง
-        setBrushRange({ startIndex: 0, endIndex: chartData.length - 1 });
-        isInitialMount.current = false;
-      } else if (autoMode) {
-        // ถ้าเปิด Auto อยู่ และมีข้อมูลใหม่เข้ามา ให้ขยับช่วงแสดงผลตามข้อมูลล่าสุดอัตโนมัติ
-        setBrushRange({ startIndex: 0, endIndex: chartData.length - 1 });
-      }
+    if (autoMode) {
+      setDomain({ left: 0, right: 168 });
     }
-  }, [chartData.length, autoMode]);
+  }, [autoMode]);
 
   const tempTarget = telemetry.tempTarget || 23;
   const tempTol = telemetry.tempTolerance || 3;
@@ -319,7 +313,8 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
               <XAxis 
                 type="number"
                 dataKey="hourOffset" 
-                domain={[0, 168]} 
+                domain={[domain.left, domain.right]} 
+                allowDataOverflow={true}
                 ticks={[0, 24, 48, 72, 96, 120, 144, 168]}
                 tickFormatter={formatAdaptiveXAxisTick} 
                 tick={{ fill: isDark ? '#94A3B8' : '#334155', fontSize: 10, fontWeight: 'bold' }} 
@@ -364,17 +359,17 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
               <Brush 
                 dataKey="hourOffset" 
                 height={25} 
-                stroke="#2563EB" 
+                stroke="#2563EB" // (ใช้ #0284C7 สำหรับกราฟ Humidity)
                 fill={isDark ? '#0F172A' : '#F1F5F9'} 
                 tickFormatter={() => ''} 
-                startIndex={brushRange.startIndex}
-                endIndex={brushRange.endIndex}
                 onChange={(range: any) => {
-                  if (range && typeof range.startIndex === 'number' && typeof range.endIndex === 'number') {
-                    setBrushRange(range);
-                    // ถ้าผู้ใช้ลากซูมเข้ามาดูช่วงเวลาเฉพาะ ให้ปิด Auto อัตโนมัติ เพื่อไม่ให้กราฟดีดกลับ
-                    const isFullRange = range.startIndex === 0 && range.endIndex >= chartData.length - 2;
-                    if (!isFullRange) {
+                  if (range && range.startIndex !== undefined && range.endIndex !== undefined && chartData[range.startIndex] && chartData[range.endIndex]) {
+                    const leftVal = chartData[range.startIndex].hourOffset;
+                    const rightVal = chartData[range.endIndex].hourOffset;
+                    
+                    // ถ้ามีการลากซูมเข้ามา ให้ล็อกช่วงเวลานี้ไว้และปิด Auto อัตโนมัติ
+                    if (leftVal !== undefined && rightVal !== undefined && (leftVal > 0 || rightVal < 168)) {
+                      setDomain({ left: leftVal, right: rightVal });
                       setAutoMode(false);
                     }
                   }

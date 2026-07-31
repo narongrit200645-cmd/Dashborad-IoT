@@ -107,8 +107,6 @@ export default function App() {
     }
   }, [themeMode]);
 
-  // Fetch initial data and setup polling every 3 seconds
-  // เชื่อมต่อรับค่าจริงแบบ Real-time 100% (Server-Sent Events)
   // ดึงข้อมูลจาก Supabase โดยตรงทุกๆ 5 วินาที (รองรับบน Vercel 100%)
   useEffect(() => {
     const fetchSupabaseData = async () => {
@@ -135,7 +133,7 @@ export default function App() {
             // กลับลำดับข้อมูลให้เรียงจากเก่าไปใหม่ สำหรับใช้วาดกราฟ
             const sortedRecords = [...records].reverse();
 
-            const history = sortedRecords.map((record: any) => {
+            const historyData = sortedRecords.map((record: any) => {
               const date = new Date(record.created_at);
               const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
               return {
@@ -165,10 +163,10 @@ export default function App() {
               lastUpdated: new Date().toISOString(),
             }));
 
-            setHistory(history);
+            setHistory(historyData);
           }
         }
-      } yt (err) {
+      } catch (err) {
         console.error('Failed to fetch data from Supabase:', err);
         setTelemetry((prev) => ({ ...prev, status: 'offline' }));
       }
@@ -246,13 +244,6 @@ export default function App() {
 
         setExportHistory((prev) => [newExportItem, ...prev].slice(0, 20));
 
-        // Save to backend server
-        fetch('/api/iot/export-save', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(newExportItem),
-        }).catch((e) => console.error('Failed to save export:', e));
-
         // Optional Browser Auto-Download
         if (exportSettings.autoDownload) {
           const link = document.createElement('a');
@@ -288,20 +279,12 @@ export default function App() {
     };
 
     setExportHistory((prev) => [newExportItem, ...prev].slice(0, 20));
-
-    fetch('/api/iot/export-save', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(newExportItem),
-    }).catch((e) => console.error('Failed to save manual export:', e));
   }, []);
 
   // Update telemetry locally & broadcast
   const handleUpdateTelemetry = async (updated: Partial<TelemetryData>) => {
-    // 1. อัปเดตตัวเลขหน้าปัด
     setTelemetry((prev) => ({ ...prev, ...updated }));
 
-    // 2. 🌟 เพิ่มโค้ดส่วนนี้: อัปเดตจุดบนกราฟทันทีเมื่อกด Simulator
     if (updated.temperature !== undefined || updated.humidity !== undefined) {
       setHistory((prevHistory) => {
         const now = new Date();
@@ -311,28 +294,21 @@ export default function App() {
         const dateStr = now.toLocaleDateString('th-TH');
 
         const newPoint = {
+          id: `sim_${Date.now()}`,
+          timestamp: now.getTime(),
           time: timeStr,
           day: dayStr,
           dateStr: dateStr,
-          // ดึงค่าใหม่ที่กดจำลองมาใส่กราฟ ถ้าไม่มีให้ใช้ค่าเดิม
           temperature: updated.temperature !== undefined ? updated.temperature : telemetry.temperature,
+          tempMin: telemetry.tempTarget - telemetry.tempTolerance,
+          tempMax: telemetry.tempTarget + telemetry.tempTolerance,
           humidity: updated.humidity !== undefined ? updated.humidity : telemetry.humidity,
+          humMin: telemetry.humidityTarget - telemetry.humidityTolerance,
+          humMax: telemetry.humidityTarget + telemetry.humidityTolerance,
         };
 
-        // สร้างจุดใหม่ต่อท้าย และเก็บย้อนหลังไม่เกิน 200 จุด
         return [...prevHistory, newPoint].slice(-200);
       });
-    }
-
-    // 3. ส่งข้อมูลเข้า API
-    try {
-      await fetch('/api/iot/update', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updated),
-      });
-    } catch (e) {
-      console.error('Update telemetry error:', e);
     }
   };
 

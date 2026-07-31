@@ -109,73 +109,78 @@ export default function App() {
 
   // Fetch initial data and setup polling every 3 seconds
   // เชื่อมต่อรับค่าจริงแบบ Real-time 100% (Server-Sent Events)
+  // ดึงข้อมูลจาก Supabase โดยตรงทุกๆ 5 วินาที (รองรับบน Vercel 100%)
   useEffect(() => {
-    // 1. ดึงข้อมูลประวัติย้อนหลังครั้งแรกตอนโหลดหน้าเว็บ
-    const fetchInitialData = async () => {
+    const fetchSupabaseData = async () => {
       try {
-        const res = await fetch('/api/iot/data');
+        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+        const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+        if (!supabaseUrl || !supabaseKey) {
+          console.error('Missing Supabase environment variables!');
+          return;
+        }
+
+        // ดึงข้อมูลย้อนหลังล่าสุด 200 รายการจาก Supabase
+        const res = await fetch(`${supabaseUrl}/rest/v1/sensor_data?select=*&order=created_at.desc&limit=200`, {
+          headers: {
+            'apikey': supabaseKey,
+            'Authorization': `Bearer ${supabaseKey}`
+          }
+        });
+
         if (res.ok) {
-          const data = await res.json();
-          if (data.telemetry) setTelemetry((prev) => ({ ...prev, ...data.telemetry }));
-          if (data.history) setHistory(data.history);
+          const records = await res.json();
+          if (records && records.length > 0) {
+            // กลับลำดับข้อมูลให้เรียงจากเก่าไปใหม่ สำหรับใช้วาดกราฟ
+            const sortedRecords = [...records].reverse();
+
+            const history = sortedRecords.map((record: any) => {
+              const date = new Date(record.created_at);
+              const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+              return {
+                time: date.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+                day: days[date.getDay()],
+                dateStr: date.toLocaleDateString('th-TH'),
+                temperature: record.temperature,
+                humidity: record.humidity,
+              };
+            });
+
+            // ค่าล่าสุดคือตัวท้ายสุดของ sortedRecords
+            const latest = sortedRecords[sortedRecords.length - 1];
+            
+            setTelemetry((prev) => ({
+              ...prev,
+              temperature: latest.temperature ?? prev.temperature,
+              humidity: latest.humidity ?? prev.humidity,
+              barometer: latest.barometer ?? prev.barometer,
+              v100_ln: latest.v100_ln ?? prev.v100_ln,
+              v220_ln: latest.v220_ln ?? prev.v220_ln,
+              v100_lg: latest.v100_lg ?? prev.v100_lg,
+              v220_lg: latest.v220_lg ?? prev.v220_lg,
+              gnd_100v: latest.gnd_100v ?? prev.gnd_100v,
+              gnd_220v: latest.gnd_220v ?? prev.gnd_220v,
+              status: 'online',
+              lastUpdated: new Date().toISOString(),
+            }));
+
+            setHistory(history);
+          }
         }
-      } catch (err) {
-        console.error('Failed to fetch initial IoT telemetry:', err);
+      } yt (err) {
+        console.error('Failed to fetch data from Supabase:', err);
+        setTelemetry((prev) => ({ ...prev, status: 'offline' }));
       }
     };
 
-    fetchInitialData();
+    // โหลดข้อมูลทันทีเมื่อเปิดเว็บ
+    fetchSupabaseData();
 
-    // 2. เปิดท่อรับการสตรีมข้อมูลเรียลไทม์จากเซิร์ฟเวอร์
-    const eventSource = new EventSource('/api/iot/stream');
+    // ตั้งเวลาดึงข้อมูลใหม่ทุกๆ 5 วินาทีอัตโนมัติ (Real-time polling)
+    const interval = setInterval(fetchSupabaseData, 5000);
 
-    eventSource.onmessage = (event) => {
-      try {
-        const realTimeData = JSON.parse(event.data);
-        
-        // เมื่อมีค่าใหม่จากบอร์ด ESP32 เข้ามา ให้เปลี่ยนตัวเลขบนหน้าปัดทันที
-        if (realTimeData.telemetry) {
-          setTelemetry((prev) => ({
-            ...prev,
-            ...realTimeData.telemetry,
-            status: 'online',
-            lastUpdated: new Date().toISOString(),
-          }));
-
-          // อัปเดตจุดของอุณหภูมิและความชื้นลงในกราฟทันที
-          setHistory((prevHistory) => {
-            const now = new Date();
-            const timeStr = now.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-            const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-            const dayStr = days[now.getDay()];
-            const dateStr = now.toLocaleDateString('th-TH');
-
-            const newPoint = {
-              time: timeStr,
-              day: dayStr,
-              dateStr: dateStr,
-              temperature: realTimeData.telemetry.temperature,
-              humidity: realTimeData.telemetry.humidity,
-            };
-
-            // เก็บประวัติจุดบนกราฟย้อนหลังไม่เกิน 200 จุด เพื่อไม่ให้เบราว์เซอร์ช้า
-            return [...prevHistory, newPoint].slice(-200);
-          });
-        }
-      } catch (err) {
-        console.error('Error parsing real-time stream:', err);
-      }
-    };
-
-    eventSource.onerror = () => {
-      // หากเซิร์ฟเวอร์หลุด ให้เปลี่ยนสถานะเป็น offline
-      setTelemetry((prev) => ({ ...prev, status: 'offline' }));
-    };
-
-    // ปิดการเชื่อมต่อเมื่อเปลี่ยนหน้าหรือปิดเว็บ
-    return () => {
-      eventSource.close();
-    };
+    return () => clearInterval(interval);
   }, []);
 
   // Drag and Drop card reordering state

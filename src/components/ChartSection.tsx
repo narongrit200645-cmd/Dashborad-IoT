@@ -20,6 +20,7 @@ interface ChartSectionProps {
   telemetry: TelemetryData;
   isDark?: boolean;
   onManualExportSaved?: (imageData: string, title: string) => void;
+  onAutoResetWeekly?: () => void;
 }
 
 const renderMaxLabel = (props: any) => {
@@ -96,6 +97,7 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
   telemetry,
   isDark = true,
   onManualExportSaved,
+  onAutoResetWeekly,
 }) => {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const [isExporting, setIsExporting] = useState(false);
@@ -107,6 +109,25 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
   const [brushRange, setBrushRange] = useState({ startIndex: 0, endIndex: 0 });
 
   const [showMinMax, setShowMinMax] = useState({ tempMin: true, tempMax: true, humMin: true, humMax: true });
+
+  // ฟังก์ชันตรวจสอบและเคลียร์ค่าเมื่อขึ้นสัปดาห์ใหม่ (วันจันทร์ 00:00 น.)[cite: 14]
+  useEffect(() => {
+    const checkWeeklyReset = () => {
+      const now = new Date();
+      const currentDay = now.getDay();
+      const currentHour = now.getHours();
+      const currentMinute = now.getMinutes();
+
+      if (currentDay === 1 && currentHour === 0 && currentMinute === 0) {
+        if (onAutoResetWeekly) {
+          onAutoResetWeekly();
+        }
+      }
+    };
+
+    const interval = setInterval(checkWeeklyReset, 30000);
+    return () => clearInterval(interval);
+  }, [onAutoResetWeekly]);
 
   const chartData = useMemo(() => {
     const dataPoints: any[] = [];
@@ -133,7 +154,6 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
       const [hh, mm] = (pt.time || '00:00').split(':').map(Number);
       const exactHourOffset = dayIdx * 24 + (hh || 0) + (mm || 0) / 60;
 
-      // รองรับชื่อฟิลด์ความชื้นได้หลายรูปแบบ (humidity, hum, humid) ป้องกันค่า undefined
       const humVal = pt.humidity !== undefined ? pt.humidity : (pt.hum !== undefined ? pt.hum : pt.humid);
       const tempVal = pt.temperature !== undefined ? pt.temperature : pt.temp;
 

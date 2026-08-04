@@ -404,7 +404,6 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
                 dataKey="hourOffset" 
                 domain={[domain.left, domain.right]} 
                 allowDataOverflow={true}
-                {/* แก้ไขให้ ticks ปรับอัตโนมัติถ้ามีการซูม */}
                 ticks={isZoomed ? undefined : [0, 24, 48, 72, 96, 120, 144, 168]}
                 tickFormatter={formatAdaptiveXAxisTick} 
                 tick={{ fill: isDark ? '#94A3B8' : '#334155', fontSize: 10, fontWeight: 'bold' }} 

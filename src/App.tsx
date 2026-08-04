@@ -79,7 +79,7 @@ export default function App() {
   const [widgets, setWidgets] = useState<WidgetConfig[]>(DEFAULT_WIDGETS);
 
   // Theme Mode: 'auto' | 'day' | 'night'
-  const [themeMode, setThemeMode] = useState<ThemeMode>('night'); // Default dark navy theme matching screenshot
+  const [themeMode, setThemeMode] = useState<ThemeMode>('night');
   const [isDark, setIsDark] = useState<boolean>(true);
 
   // Auto Export settings & logs
@@ -100,14 +100,42 @@ export default function App() {
   useEffect(() => {
     if (themeMode === 'auto') {
       const hour = new Date().getHours();
-      // Day time: 06:00 to 18:00
       setIsDark(hour < 6 || hour >= 18);
     } else {
       setIsDark(themeMode === 'night');
     }
   }, [themeMode]);
 
-  // ดึงข้อมูลจาก Supabase โดยตรงทุกๆ 5 วินาที (รองรับบน Vercel 100%)
+  // ฟังก์ชันสำหรับเคลียร์ข้อมูลเก่าใน Supabase เมื่อขึ้นสัปดาห์ใหม่ (ทุกวันจันทร์ 00:00 น.)
+  const handleAutoResetWeekly = async () => {
+    try {
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+      if (!supabaseUrl || !supabaseKey) return;
+
+      const res = await fetch(`${supabaseUrl}/rest/v1/sensor_data?id=gt.0`, {
+        method: 'DELETE',
+        headers: {
+          'apikey': supabaseKey,
+          'Authorization': `Bearer ${supabaseKey}`,
+          'Content-Type': 'application/json',
+          'Prefer': 'return=minimal'
+        }
+      });
+
+      if (res.ok) {
+        console.log('Successfully cleared old Supabase data for the new week.');
+        setHistory([]);
+      } else {
+        console.error('Failed to clear Supabase weekly data');
+      }
+    } catch (err) {
+      console.error('Error during weekly auto-reset:', err);
+    }
+  };
+
+  // ดึงข้อมูลจาก Supabase โดยตรงทุกๆ 5 วินาที
   useEffect(() => {
     const fetchSupabaseData = async () => {
       try {
@@ -119,7 +147,6 @@ export default function App() {
           return;
         }
 
-        // ดึงข้อมูลย้อนหลังล่าสุด 200 รายการจาก Supabase
         const res = await fetch(`${supabaseUrl}/rest/v1/sensor_data?select=*&order=created_at.desc&limit=200`, {
           headers: {
             'apikey': supabaseKey,
@@ -130,7 +157,6 @@ export default function App() {
         if (res.ok) {
           const records = await res.json();
           if (records && records.length > 0) {
-            // กลับลำดับข้อมูลให้เรียงจากเก่าไปใหม่ สำหรับใช้วาดกราฟ
             const sortedRecords = [...records].reverse();
 
             const historyData = sortedRecords.map((record: any) => {
@@ -145,7 +171,6 @@ export default function App() {
               };
             });
 
-            // ค่าล่าสุดคือตัวท้ายสุดของ sortedRecords
             const latest = sortedRecords[sortedRecords.length - 1];
             
             setTelemetry((prev) => ({
@@ -172,12 +197,8 @@ export default function App() {
       }
     };
 
-    // โหลดข้อมูลทันทีเมื่อเปิดเว็บ
     fetchSupabaseData();
-
-    // ตั้งเวลาดึงข้อมูลใหม่ทุกๆ 5 วินาทีอัตโนมัติ (Real-time polling)
     const interval = setInterval(fetchSupabaseData, 5000);
-
     return () => clearInterval(interval);
   }, []);
 
@@ -209,7 +230,7 @@ export default function App() {
     setDraggedWidgetId(null);
   };
 
-  // Automatic Chart Image Export Timer Hook (Interval or Sunday 23:59)
+  // Automatic Chart Image Export Timer Hook
   useEffect(() => {
     if (!exportSettings.enabled) return;
 
@@ -244,7 +265,6 @@ export default function App() {
 
         setExportHistory((prev) => [newExportItem, ...prev].slice(0, 20));
 
-        // Optional Browser Auto-Download
         if (exportSettings.autoDownload) {
           const link = document.createElement('a');
           link.download = `IoT_Auto_Export_${Date.now()}.png`;
@@ -256,18 +276,15 @@ export default function App() {
       }
     };
 
-    // Check interval: every 60s for sunday_2359, or custom intervalMinutes
     const pollTime =
       exportSettings.scheduleType === 'sunday_2359'
         ? 60 * 1000
         : exportSettings.intervalMinutes * 60 * 1000;
 
     const exportTimer = setInterval(checkAndExport, pollTime);
-
     return () => clearInterval(exportTimer);
   }, [exportSettings]);
 
-  // Handle Manual Export from Chart section
   const handleManualExportSaved = useCallback((imageData: string, title: string) => {
     const nowStr = new Date().toLocaleString('th-TH');
     const newExportItem: ExportHistoryItem = {
@@ -281,7 +298,6 @@ export default function App() {
     setExportHistory((prev) => [newExportItem, ...prev].slice(0, 20));
   }, []);
 
-  // Update telemetry locally & broadcast
   const handleUpdateTelemetry = async (updated: Partial<TelemetryData>) => {
     setTelemetry((prev) => ({ ...prev, ...updated }));
 
@@ -312,7 +328,6 @@ export default function App() {
     }
   };
 
-  // Reset layout to 100% original screenshot state
   const handleResetLayout = () => {
     setWidgets(DEFAULT_WIDGETS);
     setTelemetry((prev) => ({
@@ -331,7 +346,6 @@ export default function App() {
       }`}
     >
       <div className="max-w-[1700px] mx-auto space-y-4">
-        {/* Top Header & Navigation */}
         <Header
           themeMode={themeMode}
           onThemeModeChange={setThemeMode}
@@ -344,18 +358,14 @@ export default function App() {
           onUpdateLogoSettings={handleUpdateLogoSettings}
         />
 
-        {/* Main Dashboard Layout Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
-          {/* LEFT SECTION (5 Columns on Large Screens) */}
           <div className="lg:col-span-5 space-y-4">
-            {/* Box 1 Top Left: Clock & Company Card */}
             <ClockCard
               isDark={isDark}
               clockLogoUrl={logoSettings.clockLogoUrl}
               onUpdateClockLogo={(url) => handleUpdateLogoSettings({ clockLogoUrl: url })}
             />
 
-            {/* 3x3 Sensor Cards Grid matching Screenshot 100% */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               {widgets
                 .filter((w) => w.visible)
@@ -363,7 +373,6 @@ export default function App() {
                   const rawVal = telemetry[widget.key as keyof TelemetryData];
                   const displayVal = typeof rawVal === 'number' ? rawVal : rawVal || 0;
 
-                  // Check if values exceed alarm boundaries
                   let isAlert = false;
                   if (widget.key === 'temperature') {
                     const min = telemetry.tempTarget - telemetry.tempTolerance;
@@ -399,19 +408,18 @@ export default function App() {
             </div>
           </div>
 
-          {/* RIGHT SECTION (7 Columns on Large Screens): Temperature & Humidity Charts */}
           <div className="lg:col-span-7">
             <ChartSection
               history={history}
               telemetry={telemetry}
               isDark={isDark}
               onManualExportSaved={handleManualExportSaved}
+              onAutoResetWeekly={handleAutoResetWeekly}
             />
           </div>
         </div>
       </div>
 
-      {/* MODALS */}
       <AutoExportManager
         isOpen={isAutoExportOpen}
         onClose={() => setIsAutoExportOpen(false)}

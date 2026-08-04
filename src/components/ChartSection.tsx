@@ -11,7 +11,7 @@ import {
   ReferenceArea,
   Brush
 } from 'recharts';
-import { Globe, Clock, Camera, CheckCircle2 } from 'lucide-react';
+import { Globe, Clock, Camera, CheckCircle2, ZoomIn, RotateCcw } from 'lucide-react';
 import { toPng, toJpeg } from 'html-to-image';
 import { HistoryPoint, TelemetryData } from '../types';
 
@@ -100,22 +100,24 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const [isExporting, setIsExporting] = useState(false);
   const [exportSuccessMsg, setExportSuccessMsg] = useState<string | null>(null);
+  
+  // ควบคุมโหมดการทำงานคล้ายในคลิปตัวอย่าง
   const [autoMode, setAutoMode] = useState(true);
+  const [isZoomMode, setIsZoomMode] = useState(false);
   const [domain, setDomain] = useState({ left: 0, right: 168 });
   const [brushRange, setBrushRange] = useState({ startIndex: 0, endIndex: 0 });
-  const isInitialMount = useRef(true);
+
+  // สถานะเปิด/ปิดการแสดงผลเส้น MIN / MAX แบบอินเทอร์แอกทีฟ
+  const [showMinMax, setShowMinMax] = useState({ tempMin: true, tempMax: true, humMin: true, humMax: true });
 
   const chartData = useMemo(() => {
     const dataPoints: any[] = [];
     const daysWithData = new Set<number>();
 
-    // หาว่าวันไหน (0-6) ที่มีข้อมูลส่งเข้ามาบ้าง
     history.forEach((pt) => {
       daysWithData.add(dayMap[pt.day] ?? 0);
     });
 
-    // 1. สร้างโครงสร้างเวลาพื้นฐาน 7 วัน (ทุก 30 นาที) เป็นค่าว่าง (null)
-    // เพื่อรับประกันว่าแกน X, แกน Y, Brush และเส้นขอบเขต ทำงานได้สมบูรณ์เสมอแม้ไม่มีข้อมูล
     for (let h = 0; h <= 168; h += 0.5) {
       dataPoints.push({
         hourOffset: h,
@@ -128,7 +130,6 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
       });
     }
 
-    // 2. แทรกข้อมูลจริงตามเวลาจริง (เป๊ะๆ ไม่ปัดเศษ)
     history.forEach((pt) => {
       const dayIdx = dayMap[pt.day] ?? 0;
       const [hh, mm] = (pt.time || '00:00').split(':').map(Number);
@@ -147,29 +148,28 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
       }
     });
 
-    // 3. เรียงลำดับจากเวลาน้อยไปมาก
     dataPoints.sort((a, b) => a.hourOffset - b.hourOffset);
 
-    // 4. กรองจุดที่ทำให้เส้นขาดออก (เฉพาะวันที่มีข้อมูล)
     const finalData = dataPoints.filter((pt) => {
-      if (!pt.isDummy) return true; // ข้อมูลจริงเก็บไว้เสมอ
-
+      if (!pt.isDummy) return true;
       const currentDay = Math.floor(pt.hourOffset / 24);
-      
-      // ถ้านี่คือจุดรอยต่อข้ามวัน (00:00) ให้เก็บไว้เพื่อตัดเส้นไม่ให้ลากข้ามวัน
       if (pt.hourOffset % 24 === 0) return true;
-
-      // ถ้าวันนั้นมีข้อมูลจริงอยู่แล้ว ให้ลบจุด Dummy (null) ระหว่างวันทิ้ง เพื่อให้เส้นกราฟเชื่อมกันสนิทสมูทที่สุด
       if (daysWithData.has(currentDay)) return false;
-
-      // ถ้าวันนั้นไม่มีข้อมูลเลย ให้เก็บ Dummy ไว้เพื่อพยุงแกน X และระบบซูม (Brush) ให้สมมาตรและแสดงผลปกติ
       return true;
     });
 
     return finalData;
   }, [history]);
 
-  // ควบคุมการแสดงผลตามโหมด Auto
+  // ดึงช่วงวันที่สำหรับแสดงที่มุมขวาบนของกราฟ (เช่น 03-AUG-26 - 09-AUG-26)
+  const dateRangeLabel = useMemo(() => {
+    const validDates = history.filter(pt => pt.dateStr).map(pt => pt.dateStr);
+    if (validDates.length > 0) {
+      return `${validDates[0]} - ${validDates[validDates.length - 1]}`;
+    }
+    return "03-AUG-26 - 09-AUG-26";
+  }, [history]);
+
   useEffect(() => {
     if (autoMode) {
       setDomain({ left: 0, right: 168 });
@@ -191,6 +191,12 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
 
   const handleOdooClick = () => {
     window.open('https://erp.nacal.co.th/web#action=514&cids=1&menu_id=368&model=job.order&view_type=list', '_blank');
+  };
+
+  const handleResetZoom = () => {
+    setDomain({ left: 0, right: 168 });
+    setAutoMode(true);
+    setIsZoomMode(false);
   };
 
   const handleExportImage = async (format: 'png' | 'jpeg' = 'png') => {
@@ -262,26 +268,37 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          {/* ปุ่มควบคุมการทำงานแบบเดียวกับในวิดีโอ (Reset Zoom, Zoom, Auto) */}
           <div className={`flex items-center p-0.5 rounded-lg border text-xs font-semibold ${isDark ? 'bg-slate-900 border-slate-700' : 'bg-slate-100 border-slate-300'}`}>
-            <button disabled className="px-2 py-1 rounded text-slate-500 cursor-not-allowed opacity-50">
-              วันนี้ (Today)
+            <button 
+              onClick={handleResetZoom}
+              className="flex items-center space-x-1 px-2.5 py-1 rounded hover:bg-slate-700 text-slate-300 transition-all"
+              title="รีเซ็ตการซูม"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Reset Zoom</span>
             </button>
-            <button className="px-2 py-1 rounded bg-blue-600 text-white font-bold shadow cursor-default">
-              7 วัน (1 Week)
+            <button 
+              onClick={() => setIsZoomMode(!isZoomMode)}
+              className={`flex items-center space-x-1 px-2.5 py-1 rounded transition-all ${isZoomMode ? 'bg-blue-600 text-white font-bold' : 'text-slate-300 hover:bg-slate-700'}`}
+              title="โหมดซูม"
+            >
+              <ZoomIn className="w-3.5 h-3.5" />
+              <span>Zoom</span>
             </button>
-            <button disabled className="px-2 py-1 rounded text-slate-500 cursor-not-allowed opacity-50">
-              30 วัน (1 Month)
+            <button 
+              onClick={() => { setAutoMode(!autoMode); if(!autoMode) handleResetZoom(); }}
+              className={`flex items-center space-x-1 px-2.5 py-1 rounded transition-all ${autoMode ? 'bg-blue-600 text-white font-bold' : 'text-slate-300 hover:bg-slate-700'}`}
+              title="โหมดอัปเดตอัตโนมัติ"
+            >
+              <Clock className="w-3.5 h-3.5" />
+              <span>Auto</span>
             </button>
           </div>
 
           <button onClick={handleOdooClick} className="flex items-center space-x-1.5 px-3 py-1.5 text-xs font-bold rounded-lg bg-blue-700 hover:bg-blue-600 text-white border border-blue-400 transition-all shadow-sm">
             <Globe className="w-3.5 h-3.5" />
             <span>Odoo</span>
-          </button>
-
-          <button onClick={() => setAutoMode(!autoMode)} className={`flex items-center space-x-1.5 px-3 py-1.5 text-xs font-bold rounded-lg border transition-all shadow-sm ${autoMode ? 'bg-blue-600 hover:bg-blue-500 text-white border-blue-400 shadow-[0_0_8px_rgba(37,99,235,0.5)]' : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-600'}`}>
-            <Clock className="w-3.5 h-3.5" />
-            <span>Auto</span>
           </button>
 
           <button onClick={() => handleExportImage('png')} disabled={isExporting} className="flex items-center space-x-1.5 px-3.5 py-1.5 text-xs font-bold rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white border border-emerald-400 shadow-md transition-all active:scale-95 disabled:opacity-50">
@@ -291,6 +308,7 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
         </div>
       </div>
 
+      {/* ส่วนกราฟ Temperature */}
       <div className="mb-6">
         <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
           <div className="flex items-center space-x-2">
@@ -298,10 +316,27 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
               Temperature <span className="text-xl">🌡️</span> <span className={`font-extrabold ${isDark ? 'text-blue-300' : 'text-blue-700'}`}>{tempTarget} ±{tempTol}°C</span>
             </h4>
           </div>
-          <div className="flex items-center space-x-4 text-xs font-semibold">
+          <div className="flex items-center space-x-3 text-xs font-semibold">
             <div className="flex items-center space-x-1.5"><span className="w-3.5 h-2.5 rounded bg-blue-600"></span><span className={isDark ? 'text-slate-300' : 'text-slate-700'}>Temperature (°C)</span></div>
-            <div className="flex items-center space-x-1.5"><span className="w-3 h-0.5 bg-red-500"></span><span className="text-red-500 font-bold">MIN ({tempMin}°C)</span></div>
-            <div className="flex items-center space-x-1.5"><span className="w-3 h-0.5 bg-red-500"></span><span className="text-red-500 font-bold">MAX ({tempMax}°C)</span></div>
+            
+            {/* ปุ่มเปิด/ปิด MIN / MAX แบบ Interactive เหมือนในคลิป */}
+            <button 
+              onClick={() => setShowMinMax(prev => ({ ...prev, tempMin: !prev.tempMin }))}
+              className={`flex items-center space-x-1 px-2 py-0.5 rounded border transition-all ${showMinMax.tempMin ? 'bg-red-950/60 border-red-500 text-red-400 font-bold' : 'bg-slate-800 border-slate-600 text-slate-400 opacity-60'}`}
+            >
+              <span>MIN ({tempMin}°)</span>
+            </button>
+            <button 
+              onClick={() => setShowMinMax(prev => ({ ...prev, tempMax: !prev.tempMax }))}
+              className={`flex items-center space-x-1 px-2 py-0.5 rounded border transition-all ${showMinMax.tempMax ? 'bg-red-950/60 border-red-500 text-red-400 font-bold' : 'bg-slate-800 border-slate-600 text-slate-400 opacity-60'}`}
+            >
+              <span>MAX ({tempMax}°)</span>
+            </button>
+
+            {/* ป้ายแสดงช่วงวันที่มุมขวาบนของกราฟ */}
+            <span className={`px-2 py-0.5 rounded border text-[11px] font-bold ${isDark ? 'bg-red-950/80 border-red-600 text-red-300' : 'bg-red-50 border-red-300 text-red-700'}`}>
+              {dateRangeLabel}
+            </span>
           </div>
         </div>
 
@@ -351,15 +386,15 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
                 </React.Fragment>
               ))}
 
-              <ReferenceLine y={tempMin} stroke="#EF4444" strokeWidth={2} label={renderMinLabel} />
-              <ReferenceLine y={tempMax} stroke="#EF4444" strokeWidth={2} label={renderMaxLabel} />
+              {showMinMax.tempMin && <ReferenceLine y={tempMin} stroke="#EF4444" strokeWidth={2} label={renderMinLabel} />}
+              {showMinMax.tempMax && <ReferenceLine y={tempMax} stroke="#EF4444" strokeWidth={2} label={renderMaxLabel} />}
               
               <Line type="monotone" connectNulls={false} dataKey="temperature" stroke="#2563EB" strokeWidth={3} dot={false} activeDot={{ r: 6, fill: '#60A5FA' }} />
               
               <Brush 
                 dataKey="hourOffset" 
                 height={25} 
-                stroke="#2563EB" // (ใช้ #0284C7 สำหรับกราฟ Humidity)
+                stroke="#2563EB" 
                 fill={isDark ? '#0F172A' : '#F1F5F9'} 
                 tickFormatter={() => ''} 
                 onChange={(range: any) => {
@@ -367,7 +402,6 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
                     const leftVal = chartData[range.startIndex].hourOffset;
                     const rightVal = chartData[range.endIndex].hourOffset;
                     
-                    // ถ้ามีการลากซูมเข้ามา ให้ล็อกช่วงเวลานี้ไว้และปิด Auto อัตโนมัติ
                     if (leftVal !== undefined && rightVal !== undefined && (leftVal > 0 || rightVal < 168)) {
                       setDomain({ left: leftVal, right: rightVal });
                       setAutoMode(false);
@@ -380,6 +414,7 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
         </div>
       </div>
 
+      {/* ส่วนกราฟ Humidity */}
       <div>
         <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
           <div className="flex items-center space-x-2">
@@ -387,10 +422,25 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
               Humidity <span className="text-xl">💧</span> <span className={`font-extrabold ${isDark ? 'text-blue-300' : 'text-blue-700'}`}>{humTarget} ±{humTol}%</span>
             </h4>
           </div>
-          <div className="flex items-center space-x-4 text-xs font-semibold">
+          <div className="flex items-center space-x-3 text-xs font-semibold">
             <div className="flex items-center space-x-1.5"><span className="w-3.5 h-2.5 rounded bg-blue-600"></span><span className={isDark ? 'text-slate-300' : 'text-slate-700'}>Humidity (%)</span></div>
-            <div className="flex items-center space-x-1.5"><span className="w-3 h-0.5 bg-red-500"></span><span className="text-red-500 font-bold">MIN ({humMin}%)</span></div>
-            <div className="flex items-center space-x-1.5"><span className="w-3 h-0.5 bg-red-500"></span><span className="text-red-500 font-bold">MAX ({humMax}%)</span></div>
+            
+            <button 
+              onClick={() => setShowMinMax(prev => ({ ...prev, humMin: !prev.humMin }))}
+              className={`flex items-center space-x-1 px-2 py-0.5 rounded border transition-all ${showMinMax.humMin ? 'bg-red-950/60 border-red-500 text-red-400 font-bold' : 'bg-slate-800 border-slate-600 text-slate-400 opacity-60'}`}
+            >
+              <span>MIN ({humMin}%)</span>
+            </button>
+            <button 
+              onClick={() => setShowMinMax(prev => ({ ...prev, humMax: !prev.humMax }))}
+              className={`flex items-center space-x-1 px-2 py-0.5 rounded border transition-all ${showMinMax.humMax ? 'bg-red-950/60 border-red-500 text-red-400 font-bold' : 'bg-slate-800 border-slate-600 text-slate-400 opacity-60'}`}
+            >
+              <span>MAX ({humMax}%)</span>
+            </button>
+
+            <span className={`px-2 py-0.5 rounded border text-[11px] font-bold ${isDark ? 'bg-red-950/80 border-red-600 text-red-300' : 'bg-red-50 border-red-300 text-red-700'}`}>
+              {dateRangeLabel}
+            </span>
           </div>
         </div>
 
@@ -402,7 +452,8 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
               <XAxis 
                 type="number"
                 dataKey="hourOffset" 
-                domain={[0, 168]} 
+                domain={[domain.left, domain.right]} 
+                allowDataOverflow={true}
                 ticks={[0, 24, 48, 72, 96, 120, 144, 168]}
                 tickFormatter={formatAdaptiveXAxisTick} 
                 tick={{ fill: isDark ? '#94A3B8' : '#334155', fontSize: 10, fontWeight: 'bold' }} 
@@ -439,8 +490,8 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
                 </React.Fragment>
               ))}
 
-              <ReferenceLine y={humMin} stroke="#EF4444" strokeWidth={2} label={renderMinLabel} />
-              <ReferenceLine y={humMax} stroke="#EF4444" strokeWidth={2} label={renderMaxLabel} />
+              {showMinMax.humMin && <ReferenceLine y={humMin} stroke="#EF4444" strokeWidth={2} label={renderMinLabel} />}
+              {showMinMax.humMax && <ReferenceLine y={humMax} stroke="#EF4444" strokeWidth={2} label={renderMaxLabel} />}
               
               <Line type="monotone" connectNulls={false} dataKey="humidity" stroke="#0284C7" strokeWidth={3} dot={false} activeDot={{ r: 6, fill: '#7DD3FC' }} />
               

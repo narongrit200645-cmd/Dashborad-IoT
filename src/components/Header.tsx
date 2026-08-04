@@ -112,14 +112,14 @@ export const Header: React.FC<HeaderProps> = ({
         <div className="flex items-center space-x-3 text-xs font-semibold">
           <span
             className={`flex items-center space-x-1.5 px-3 py-1 rounded-full border ${
-              isDark
-                ? 'bg-emerald-950/80 border-emerald-600/80 text-emerald-300'
-                : 'bg-emerald-50 border-emerald-300 text-emerald-800 font-bold'
+              telemetry.status === 'online'
+                ? (isDark ? 'bg-emerald-950/80 border-emerald-600/80 text-emerald-300' : 'bg-emerald-50 border-emerald-300 text-emerald-800 font-bold')
+                : (isDark ? 'bg-red-950/80 border-red-600/80 text-red-300' : 'bg-red-50 border-red-300 text-red-800 font-bold')
             }`}
           >
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+            <span className={`w-2 h-2 rounded-full animate-pulse ${telemetry.status === 'online' ? 'bg-emerald-400' : 'bg-red-500'}`}></span>
             <Wifi className="w-3.5 h-3.5" />
-            <span>ESP32 Server: Online</span>
+            <span>ESP32 Server: {telemetry.status === 'online' ? 'Online' : 'Offline'}</span>
           </span>
 
           <span

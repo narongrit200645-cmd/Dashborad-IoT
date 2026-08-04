@@ -101,13 +101,11 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
   const [isExporting, setIsExporting] = useState(false);
   const [exportSuccessMsg, setExportSuccessMsg] = useState<string | null>(null);
   
-  // ควบคุมโหมดการทำงานคล้ายในคลิปตัวอย่าง
   const [autoMode, setAutoMode] = useState(true);
   const [isZoomMode, setIsZoomMode] = useState(false);
   const [domain, setDomain] = useState({ left: 0, right: 168 });
   const [brushRange, setBrushRange] = useState({ startIndex: 0, endIndex: 0 });
 
-  // สถานะเปิด/ปิดการแสดงผลเส้น MIN / MAX แบบอินเทอร์แอกทีฟ
   const [showMinMax, setShowMinMax] = useState({ tempMin: true, tempMax: true, humMin: true, humMax: true });
 
   const chartData = useMemo(() => {
@@ -130,16 +128,20 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
       });
     }
 
-    history.forEach((pt) => {
+    history.forEach((pt: any) => {
       const dayIdx = dayMap[pt.day] ?? 0;
       const [hh, mm] = (pt.time || '00:00').split(':').map(Number);
       const exactHourOffset = dayIdx * 24 + (hh || 0) + (mm || 0) / 60;
 
+      // รองรับชื่อฟิลด์ความชื้นได้หลายรูปแบบ (humidity, hum, humid) ป้องกันค่า undefined
+      const humVal = pt.humidity !== undefined ? pt.humidity : (pt.hum !== undefined ? pt.hum : pt.humid);
+      const tempVal = pt.temperature !== undefined ? pt.temperature : pt.temp;
+
       if (exactHourOffset >= 0 && exactHourOffset <= 168) {
         dataPoints.push({
           hourOffset: exactHourOffset,
-          temperature: pt.temperature,
-          humidity: pt.humidity,
+          temperature: tempVal,
+          humidity: humVal,
           time: pt.time,
           day: pt.day,
           dateStr: pt.dateStr,
@@ -161,7 +163,12 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
     return finalData;
   }, [history]);
 
-  // ดึงช่วงวันที่สำหรับแสดงที่มุมขวาบนของกราฟ (เช่น 03-AUG-26 - 09-AUG-26)
+  useEffect(() => {
+    if (chartData.length > 0 && brushRange.endIndex === 0) {
+      setBrushRange({ startIndex: 0, endIndex: chartData.length - 1 });
+    }
+  }, [chartData]);
+
   const dateRangeLabel = useMemo(() => {
     const validDates = history.filter(pt => pt.dateStr).map(pt => pt.dateStr);
     if (validDates.length > 0) {
@@ -173,8 +180,11 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
   useEffect(() => {
     if (autoMode) {
       setDomain({ left: 0, right: 168 });
+      if (chartData.length > 0) {
+        setBrushRange({ startIndex: 0, endIndex: chartData.length - 1 });
+      }
     }
-  }, [autoMode]);
+  }, [autoMode, chartData.length]);
 
   const tempTarget = telemetry.tempTarget || 23;
   const tempTol = telemetry.tempTolerance || 3;
@@ -197,6 +207,9 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
     setDomain({ left: 0, right: 168 });
     setAutoMode(true);
     setIsZoomMode(false);
+    if (chartData.length > 0) {
+      setBrushRange({ startIndex: 0, endIndex: chartData.length - 1 });
+    }
   };
 
   const handleExportImage = async (format: 'png' | 'jpeg' = 'png') => {
@@ -243,6 +256,24 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
     return `${String(hour).padStart(2, '0')}:00`;
   };
 
+  const handleBrushChange = (range: any) => {
+    if (range && typeof range.startIndex === 'number' && typeof range.endIndex === 'number') {
+      setBrushRange(range);
+      if (chartData[range.startIndex] && chartData[range.endIndex]) {
+        const leftVal = chartData[range.startIndex].hourOffset;
+        const rightVal = chartData[range.endIndex].hourOffset;
+        
+        if (leftVal !== undefined && rightVal !== undefined) {
+          setDomain({ left: leftVal, right: rightVal });
+          const isFullRange = range.startIndex === 0 && range.endIndex >= chartData.length - 2;
+          if (!isFullRange) {
+            setAutoMode(false);
+          }
+        }
+      }
+    }
+  };
+
   return (
     <div
       ref={chartContainerRef}
@@ -268,7 +299,6 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {/* ปุ่มควบคุมการทำงานแบบเดียวกับในวิดีโอ (Reset Zoom, Zoom, Auto) */}
           <div className={`flex items-center p-0.5 rounded-lg border text-xs font-semibold ${isDark ? 'bg-slate-900 border-slate-700' : 'bg-slate-100 border-slate-300'}`}>
             <button 
               onClick={handleResetZoom}
@@ -308,7 +338,7 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
         </div>
       </div>
 
-      {/* ส่วนกราฟ Temperature */}
+      {/* กราฟ Temperature */}
       <div className="mb-6">
         <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
           <div className="flex items-center space-x-2">
@@ -319,7 +349,6 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
           <div className="flex items-center space-x-3 text-xs font-semibold">
             <div className="flex items-center space-x-1.5"><span className="w-3.5 h-2.5 rounded bg-blue-600"></span><span className={isDark ? 'text-slate-300' : 'text-slate-700'}>Temperature (°C)</span></div>
             
-            {/* ปุ่มเปิด/ปิด MIN / MAX แบบ Interactive เหมือนในคลิป */}
             <button 
               onClick={() => setShowMinMax(prev => ({ ...prev, tempMin: !prev.tempMin }))}
               className={`flex items-center space-x-1 px-2 py-0.5 rounded border transition-all ${showMinMax.tempMin ? 'bg-red-950/60 border-red-500 text-red-400 font-bold' : 'bg-slate-800 border-slate-600 text-slate-400 opacity-60'}`}
@@ -333,7 +362,6 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
               <span>MAX ({tempMax}°)</span>
             </button>
 
-            {/* ป้ายแสดงช่วงวันที่มุมขวาบนของกราฟ */}
             <span className={`px-2 py-0.5 rounded border text-[11px] font-bold ${isDark ? 'bg-red-950/80 border-red-600 text-red-300' : 'bg-red-50 border-red-300 text-red-700'}`}>
               {dateRangeLabel}
             </span>
@@ -389,7 +417,7 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
               {showMinMax.tempMin && <ReferenceLine y={tempMin} stroke="#EF4444" strokeWidth={2} label={renderMinLabel} />}
               {showMinMax.tempMax && <ReferenceLine y={tempMax} stroke="#EF4444" strokeWidth={2} label={renderMaxLabel} />}
               
-              <Line type="monotone" connectNulls={false} dataKey="temperature" stroke="#2563EB" strokeWidth={3} dot={false} activeDot={{ r: 6, fill: '#60A5FA' }} />
+              <Line type="monotone" connectNulls={true} dataKey="temperature" stroke="#2563EB" strokeWidth={3} dot={false} activeDot={{ r: 6, fill: '#60A5FA' }} />
               
               <Brush 
                 dataKey="hourOffset" 
@@ -397,24 +425,16 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
                 stroke="#2563EB" 
                 fill={isDark ? '#0F172A' : '#F1F5F9'} 
                 tickFormatter={() => ''} 
-                onChange={(range: any) => {
-                  if (range && range.startIndex !== undefined && range.endIndex !== undefined && chartData[range.startIndex] && chartData[range.endIndex]) {
-                    const leftVal = chartData[range.startIndex].hourOffset;
-                    const rightVal = chartData[range.endIndex].hourOffset;
-                    
-                    if (leftVal !== undefined && rightVal !== undefined && (leftVal > 0 || rightVal < 168)) {
-                      setDomain({ left: leftVal, right: rightVal });
-                      setAutoMode(false);
-                    }
-                  }
-                }} 
+                startIndex={brushRange.startIndex}
+                endIndex={brushRange.endIndex}
+                onChange={handleBrushChange} 
               />
             </LineChart>
           </ResponsiveContainer>
         </div>
       </div>
 
-      {/* ส่วนกราฟ Humidity */}
+      {/* กราฟ Humidity */}
       <div>
         <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
           <div className="flex items-center space-x-2">
@@ -493,7 +513,7 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
               {showMinMax.humMin && <ReferenceLine y={humMin} stroke="#EF4444" strokeWidth={2} label={renderMinLabel} />}
               {showMinMax.humMax && <ReferenceLine y={humMax} stroke="#EF4444" strokeWidth={2} label={renderMaxLabel} />}
               
-              <Line type="monotone" connectNulls={false} dataKey="humidity" stroke="#0284C7" strokeWidth={3} dot={false} activeDot={{ r: 6, fill: '#7DD3FC' }} />
+              <Line type="monotone" connectNulls={true} dataKey="humidity" stroke="#0284C7" strokeWidth={3} dot={false} activeDot={{ r: 6, fill: '#7DD3FC' }} />
               
               <Brush 
                 dataKey="hourOffset" 
@@ -503,15 +523,7 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
                 tickFormatter={() => ''} 
                 startIndex={brushRange.startIndex}
                 endIndex={brushRange.endIndex}
-                onChange={(range: any) => {
-                  if (range && typeof range.startIndex === 'number' && typeof range.endIndex === 'number') {
-                    setBrushRange(range);
-                    const isFullRange = range.startIndex === 0 && range.endIndex >= chartData.length - 2;
-                    if (!isFullRange) {
-                      setAutoMode(false);
-                    }
-                  }
-                }} 
+                onChange={handleBrushChange} 
               />
             </LineChart>
           </ResponsiveContainer>

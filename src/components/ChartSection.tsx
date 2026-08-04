@@ -269,12 +269,18 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
     const dayIdx = Math.floor(val / 24);
     const hour = Math.floor(val % 24);
     const labels = ['จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์', 'อาทิตย์', ''];
+    const shortLabels = ['จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', 'ส.', 'อา.', '']; // เพิ่มตัวย่อวัน
     
+    // ถ้าไม่ได้ซูม หรือเป็นเวลาเที่ยงคืนพอดี ให้แสดงชื่อวันเต็ม
     if (!isZoomed || (hour === 0 && val % 1 === 0)) {
        return labels[dayIdx] || '';
     }
-    return `${String(hour).padStart(2, '0')}:00`;
+    // ถ้าซูมอยู่ ให้แสดง ชื่อวันย่อ + เวลา (เช่น "จ. 12:00")
+    return `${shortLabels[dayIdx] || ''} ${String(hour).padStart(2, '0')}:00`;
   };
+
+  // กำหนดอาเรย์สำหรับเส้นเวลาเที่ยงคืนของแต่ละวัน (ชั่วโมงที่ 24, 48, 72, 96, 120, 144)
+  const midnightLines = [24, 48, 72, 96, 120, 144];
 
   const handleBrushChange = (range: any) => {
     if (range && typeof range.startIndex === 'number' && typeof range.endIndex === 'number') {
@@ -398,11 +404,25 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
                 dataKey="hourOffset" 
                 domain={[domain.left, domain.right]} 
                 allowDataOverflow={true}
-                ticks={[0, 24, 48, 72, 96, 120, 144, 168]}
+                {/* แก้ไขให้ ticks ปรับอัตโนมัติถ้ามีการซูม */}
+                ticks={isZoomed ? undefined : [0, 24, 48, 72, 96, 120, 144, 168]}
                 tickFormatter={formatAdaptiveXAxisTick} 
                 tick={{ fill: isDark ? '#94A3B8' : '#334155', fontSize: 10, fontWeight: 'bold' }} 
                 stroke={isDark ? '#334155' : '#CBD5E1'} 
               />
+              
+              {/* ... (YAxis และ Tooltip เหมือนเดิม) ... */}
+              
+              {/* เพิ่มโค้ดส่วนนี้ใต้ Tooltip เพื่อสร้างเส้นเที่ยงคืน */}
+              {midnightLines.map(hour => (
+                <ReferenceLine 
+                  key={`temp-midnight-${hour}`} 
+                  x={hour} 
+                  stroke={isDark ? '#475569' : '#94A3B8'} 
+                  strokeDasharray="4 4" 
+                  opacity={0.8} 
+                />
+              ))}
               <YAxis 
                 domain={[18, 32]} 
                 ticks={[18, 20, 22, 24, 26, 28, 30, 32]} 
@@ -494,11 +514,25 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
                 dataKey="hourOffset" 
                 domain={[domain.left, domain.right]} 
                 allowDataOverflow={true}
-                ticks={[0, 24, 48, 72, 96, 120, 144, 168]}
+                {/* แก้ไขให้ ticks ปรับอัตโนมัติถ้ามีการซูม */}
+                ticks={isZoomed ? undefined : [0, 24, 48, 72, 96, 120, 144, 168]}
                 tickFormatter={formatAdaptiveXAxisTick} 
                 tick={{ fill: isDark ? '#94A3B8' : '#334155', fontSize: 10, fontWeight: 'bold' }} 
                 stroke={isDark ? '#334155' : '#CBD5E1'} 
               />
+              
+              {/* ... (YAxis และ Tooltip เหมือนเดิม) ... */}
+              
+              {/* เพิ่มโค้ดส่วนนี้ใต้ Tooltip เพื่อสร้างเส้นเที่ยงคืน */}
+              {midnightLines.map(hour => (
+                <ReferenceLine 
+                  key={`hum-midnight-${hour}`} 
+                  x={hour} 
+                  stroke={isDark ? '#475569' : '#94A3B8'} 
+                  strokeDasharray="4 4" 
+                  opacity={0.8} 
+                />
+              ))}
               <YAxis 
                 domain={[30, 90]} 
                 ticks={[30, 40, 50, 60, 70, 80, 90]} 

@@ -371,7 +371,8 @@ export default function App() {
                 .filter((w) => w.visible)
                 .map((widget) => {
                   const rawVal = telemetry[widget.key as keyof TelemetryData];
-                  const displayVal = typeof rawVal === 'number' ? rawVal : rawVal || 0;
+                  // บังคับให้เป็นทศนิยม 1 ตำแหน่ง (ค่าที่ได้จะเป็น String เช่น "25.0")
+                  const displayVal = typeof rawVal === 'number' ? rawVal.toFixed(1) : (0).toFixed(1);
 
                   let isAlert = false;
                   if (widget.key === 'temperature') {

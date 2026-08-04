@@ -268,14 +268,21 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
   const formatAdaptiveXAxisTick = (val: any) => {
     const dayIdx = Math.floor(val / 24);
     const hour = Math.floor(val % 24);
-    const labels = ['จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์', 'อาทิตย์', ''];
-    const shortLabels = ['จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', 'ส.', 'อา.', '']; // เพิ่มตัวย่อวัน
+    // ปรับชื่อพฤหัสบดีให้สั้นลงตามรูปภาพ
+    const labels = ['จันทร์', 'อังคาร', 'พุธ', 'พฤหัส', 'ศุกร์', 'เสาร์', 'อาทิตย์', ''];
+    const shortLabels = ['จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', 'ส.', 'อา.', ''];
     
-    // ถ้าไม่ได้ซูม หรือเป็นเวลาเที่ยงคืนพอดี ให้แสดงชื่อวันเต็ม
-    if (!isZoomed || (hour === 0 && val % 1 === 0)) {
+    // กรณีที่ดูกราฟแบบปกติ (ยังไม่ได้ซูม)
+    if (!isZoomed) {
+       if (hour === 0) return labels[dayIdx] || ''; // เวลา 00:00 ให้แสดงชื่อวัน
+       if (hour === 12) return '12:00';             // เวลา 12:00 ให้แสดง "12:00"
+       return ''; 
+    }
+
+    // กรณีที่อยู่ในโหมดซูม
+    if (hour === 0 && val % 1 === 0) {
        return labels[dayIdx] || '';
     }
-    // ถ้าซูมอยู่ ให้แสดง ชื่อวันย่อ + เวลา (เช่น "จ. 12:00")
     return `${shortLabels[dayIdx] || ''} ${String(hour).padStart(2, '0')}:00`;
   };
 
@@ -404,7 +411,7 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
                 dataKey="hourOffset" 
                 domain={[domain.left, domain.right]} 
                 allowDataOverflow={true}
-                ticks={isZoomed ? undefined : [0, 24, 48, 72, 96, 120, 144, 168]}
+                ticks={isZoomed ? undefined : [0, 12, 24, 36, 48, 60, 72, 84, 96, 108, 120, 132, 144, 156, 168]}
                 tickFormatter={formatAdaptiveXAxisTick} 
                 tick={{ fill: isDark ? '#94A3B8' : '#334155', fontSize: 10, fontWeight: 'bold' }} 
                 stroke={isDark ? '#334155' : '#CBD5E1'} 
@@ -513,7 +520,7 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
                 dataKey="hourOffset" 
                 domain={[domain.left, domain.right]} 
                 allowDataOverflow={true}
-                ticks={isZoomed ? undefined : [0, 24, 48, 72, 96, 120, 144, 168]}
+                ticks={isZoomed ? undefined : [0, 12, 24, 36, 48, 60, 72, 84, 96, 108, 120, 132, 144, 156, 168]}
                 tickFormatter={formatAdaptiveXAxisTick} 
                 tick={{ fill: isDark ? '#94A3B8' : '#334155', fontSize: 10, fontWeight: 'bold' }} 
                 stroke={isDark ? '#334155' : '#CBD5E1'} 

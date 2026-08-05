@@ -110,7 +110,7 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
 
   const [showMinMax, setShowMinMax] = useState({ tempMin: true, tempMax: true, humMin: true, humMax: true });
 
-  // ฟังก์ชันตรวจสอบและเคลียร์ค่าเมื่อขึ้นสัปดาห์ใหม่ (วันจันทร์ 00:00 น.)[cite: 14]
+  // ฟังก์ชันตรวจสอบและเคลียร์ค่าเมื่อขึ้นสัปดาห์ใหม่ (วันจันทร์ 00:00 น.)
   useEffect(() => {
     const checkWeeklyReset = () => {
       const now = new Date();
@@ -280,26 +280,36 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
 
   const visibleRange = brushRange.endIndex - brushRange.startIndex;
   const isZoomed = chartData.length > 10 && visibleRange < (chartData.length * 0.8);
+  
+  // เพิ่ม effectiveIsZoomed เพื่อนำมาใช้งานร่วมกับปุ่มโหมดซูม (isZoomMode)
+  const effectiveIsZoomed = isZoomMode || isZoomed;
 
   const formatAdaptiveXAxisTick = (val: any) => {
     const dayIdx = Math.floor(val / 24);
-    const hour = Math.floor(val % 24);
+    const totalHours = val % 24;
+    const hour = Math.floor(totalHours);
+    
+    // แปลงเศษของชั่วโมงเป็นนาที
+    const minute = Math.round((totalHours - hour) * 60);
+
     // ปรับชื่อพฤหัสบดีให้สั้นลงตามรูปภาพ
     const labels = ['จันทร์', 'อังคาร', 'พุธ', 'พฤหัส', 'ศุกร์', 'เสาร์', 'อาทิตย์', ''];
     const shortLabels = ['จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', 'ส.', 'อา.', ''];
     
     // กรณีที่ดูกราฟแบบปกติ (ยังไม่ได้ซูม)
-    if (!isZoomed) {
-       if (hour === 0) return labels[dayIdx] || ''; // เวลา 00:00 ให้แสดงชื่อวัน
-       if (hour === 12) return '12:00';             // เวลา 12:00 ให้แสดง "12:00"
+    if (!effectiveIsZoomed) {
+       if (hour === 0 && minute === 0) return labels[dayIdx] || ''; // เวลา 00:00 ให้แสดงชื่อวัน
+       if (hour === 12 && minute === 0) return '12:00';             // เวลา 12:00 ให้แสดง "12:00"
        return ''; 
     }
 
     // กรณีที่อยู่ในโหมดซูม
-    if (hour === 0 && val % 1 === 0) {
+    if (hour === 0 && minute === 0) {
        return labels[dayIdx] || '';
     }
-    return `${shortLabels[dayIdx] || ''} ${String(hour).padStart(2, '0')}:00`;
+    
+    // แสดงเวลาที่มีทั้งชั่วโมงและนาที
+    return `${shortLabels[dayIdx] || ''} ${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
   };
 
   // กำหนดอาเรย์สำหรับเส้นเวลาเที่ยงคืนของแต่ละวัน (ชั่วโมงที่ 24, 48, 72, 96, 120, 144)
@@ -427,13 +437,11 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
                 dataKey="hourOffset" 
                 domain={[domain.left, domain.right]} 
                 allowDataOverflow={true}
-                ticks={isZoomed ? undefined : [0, 12, 24, 36, 48, 60, 72, 84, 96, 108, 120, 132, 144, 156, 168]}
+                ticks={effectiveIsZoomed ? undefined : [0, 12, 24, 36, 48, 60, 72, 84, 96, 108, 120, 132, 144, 156, 168]}
                 tickFormatter={formatAdaptiveXAxisTick} 
                 tick={{ fill: isDark ? '#94A3B8' : '#334155', fontSize: 10, fontWeight: 'bold' }} 
                 stroke={isDark ? '#334155' : '#CBD5E1'} 
               />
-              
-              {/* ... (YAxis และ Tooltip เหมือนเดิม) ... */}
               
               {/* เพิ่มโค้ดส่วนนี้ใต้ Tooltip เพื่อสร้างเส้นเที่ยงคืน */}
               {midnightLines.map(hour => (
@@ -536,13 +544,11 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
                 dataKey="hourOffset" 
                 domain={[domain.left, domain.right]} 
                 allowDataOverflow={true}
-                ticks={isZoomed ? undefined : [0, 12, 24, 36, 48, 60, 72, 84, 96, 108, 120, 132, 144, 156, 168]}
+                ticks={effectiveIsZoomed ? undefined : [0, 12, 24, 36, 48, 60, 72, 84, 96, 108, 120, 132, 144, 156, 168]}
                 tickFormatter={formatAdaptiveXAxisTick} 
                 tick={{ fill: isDark ? '#94A3B8' : '#334155', fontSize: 10, fontWeight: 'bold' }} 
                 stroke={isDark ? '#334155' : '#CBD5E1'} 
               />
-              
-              {/* ... (YAxis และ Tooltip เหมือนเดิม) ... */}
               
               {/* เพิ่มโค้ดส่วนนี้ใต้ Tooltip เพื่อสร้างเส้นเที่ยงคืน */}
               {midnightLines.map(hour => (

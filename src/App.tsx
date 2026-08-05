@@ -147,7 +147,7 @@ export default function App() {
           return;
         }
 
-        const res = await fetch(`${supabaseUrl}/rest/v1/sensor_data?select=*&order=created_at.desc&limit=200`, {
+        const res = await fetch(`${supabaseUrl}/rest/v1/sensor_data?select=*&order=created_at.desc&limit=1000000`, {
           headers: {
             'apikey': supabaseKey,
             'Authorization': `Bearer ${supabaseKey}`
@@ -323,7 +323,7 @@ export default function App() {
           humMax: telemetry.humidityTarget + telemetry.humidityTolerance,
         };
 
-        return [...prevHistory, newPoint].slice(-200);
+        return [...prevHistory, newPoint].slice(-1000000);
       });
     }
   };

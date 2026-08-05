@@ -1,7 +1,7 @@
-import React, { useRef } from 'react';
+import React from 'react';
 import { NALogo } from './NALogo';
 import { CrestLogo } from './CrestLogo';
-import { Sun, Moon, Cpu, Camera, Settings, Activity, Wifi, Upload, Image as ImageIcon } from 'lucide-react';
+import { Sun, Moon, Cpu, Camera, Settings, Activity, Wifi, Image as ImageIcon } from 'lucide-react';
 import { ThemeMode, TelemetryData, LogoSettings } from '../types';
 
 interface HeaderProps {
@@ -24,35 +24,9 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenESP32Modal,
   onOpenLayoutModal,
   telemetry,
-  logoSettings,
-  onUpdateLogoSettings,
 }) => {
-  const rmuFileInputRef = useRef<HTMLInputElement>(null);
-
-  const handleRmuLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        if (event.target?.result) {
-          onUpdateLogoSettings({ headerRmuLogoUrl: String(event.target.result) });
-        }
-      };
-      reader.readAsDataURL(file);
-    }
-  };
-
   return (
     <header className="w-full flex flex-col space-y-3 pb-3">
-      {/* Hidden File Input for Custom Header RMU Logo */}
-      <input
-        type="file"
-        ref={rmuFileInputRef}
-        onChange={handleRmuLogoUpload}
-        accept="image/*"
-        className="hidden"
-      />
-
       {/* Main Top Header Banner Matching Screenshot Layout 100% */}
       <div
         className={`relative w-full flex items-center justify-between px-4 py-2 rounded-xl border transition-all duration-300 ${
@@ -61,26 +35,13 @@ export const Header: React.FC<HeaderProps> = ({
             : 'bg-gradient-to-r from-blue-50 via-white to-blue-50 border-blue-200 shadow-md text-slate-900'
         }`}
       >
-        {/* Top Left RMU Logo Badge (Replaced NA with RMU logo per request) */}
-        <div className="relative group flex items-center space-x-2">
-          {logoSettings.headerRmuLogoUrl ? (
-            <img
-              src={logoSettings.headerRmuLogoUrl}
-              alt="Custom RMU Logo"
-              className="w-12 h-16 object-contain drop-shadow"
-            />
-          ) : (
-            <CrestLogo className="w-12 h-16" />
-          )}
-
-          {/* Hover button to change/upload RMU logo */}
-          <button
-            onClick={() => rmuFileInputRef.current?.click()}
-            className="absolute -bottom-1 -right-1 opacity-0 group-hover:opacity-100 bg-blue-600 hover:bg-blue-500 text-white p-1 rounded-full shadow transition-opacity border border-blue-300"
-            title="เปลี่ยนรูปโลโก้ RMU (Upload Logo)"
-          >
-            <Upload className="w-3 h-3" />
-          </button>
+        {/* Top Left RMU Logo Badge (Fixed Static Image from Public Folder) */}
+        <div className="relative flex items-center pl-2">
+          <img
+            src="/Rmu Logo.png" 
+            alt="Rmu Logo"
+            className="h-14 w-auto object-contain drop-shadow-md"
+          />
         </div>
 
         {/* Center Title Banner: Smart IoT Monitoring For Electrical Calibration Room */}

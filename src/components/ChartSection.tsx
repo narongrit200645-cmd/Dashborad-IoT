@@ -190,12 +190,28 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
   }, [chartData]);
 
   const dateRangeLabel = useMemo(() => {
-    const validDates = history.filter(pt => pt.dateStr).map(pt => pt.dateStr);
-    if (validDates.length > 0) {
-      return `${validDates[0]} - ${validDates[validDates.length - 1]}`;
-    }
-    return "03-AUG-26 - 09-AUG-26";
-  }, [history]);
+    const now = new Date();
+    
+    // หาว่าวันนี้คือวันอะไร (0 = อาทิตย์, 1 = จันทร์, ..., 6 = เสาร์)
+    const dayOfWeek = now.getDay(); 
+    
+    // คำนวณห่างกี่วันเพื่อถอยกลับไปหาวันจันทร์ (ถ้าวันนี้เป็นวันอาทิตย์ ต้องถอย 6 วัน)
+    const diffToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+    
+    // หาวันที่ของวันจันทร์ในสัปดาห์นี้
+    const monday = new Date(now);
+    monday.setDate(now.getDate() + diffToMonday);
+    
+    // หาวันที่ของวันอาทิตย์ในสัปดาห์นี้ (บวกไปอีก 6 วันจากวันจันทร์)
+    const sunday = new Date(monday);
+    sunday.setDate(monday.getDate() + 6);
+    
+    // แปลงเป็นข้อความรูปแบบ th-TH (เช่น 3/8/2569)
+    const startStr = monday.toLocaleDateString('th-TH');
+    const endStr = sunday.toLocaleDateString('th-TH');
+    
+    return `${startStr} - ${endStr}`;
+  }, []); // นำ history ออกจาก array เพื่อไม่ต้องคำนวณใหม่เมื่อข้อมูลเปลี่ยน
 
   useEffect(() => {
     if (autoMode) {

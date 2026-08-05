@@ -31,7 +31,6 @@ const DEFAULT_WIDGETS: WidgetConfig[] = [
 ];
 
 export default function App() {
-  // Telemetry state initialized matching screenshot values
   const [telemetry, setTelemetry] = useState<TelemetryData>({
     v100_ln: 0.0,
     v220_ln: 0.0,
@@ -50,7 +49,6 @@ export default function App() {
     humidityTolerance: 15,
   });
 
-  // Logo Settings state
   const [logoSettings, setLogoSettings] = useState<LogoSettings>(() => {
     try {
       const saved = localStorage.getItem('iot_logo_settings');
@@ -72,17 +70,14 @@ export default function App() {
     });
   };
 
-  // Chart history data
   const [history, setHistory] = useState<HistoryPoint[]>([]);
+  // เพิ่มตัวแปรอ้างอิงเพื่อจำว่าดึงข้อมูลล่าสุดถึงเวลาไหนแล้ว
+  const lastRecordTimeRef = useRef<string | null>(null);
 
-  // Widget customizer & reordering state
   const [widgets, setWidgets] = useState<WidgetConfig[]>(DEFAULT_WIDGETS);
-
-  // Theme Mode: 'auto' | 'day' | 'night'
   const [themeMode, setThemeMode] = useState<ThemeMode>('night');
   const [isDark, setIsDark] = useState<boolean>(true);
 
-  // Auto Export settings & logs
   const [exportSettings, setExportSettings] = useState<AutoExportSettings>({
     enabled: false,
     intervalMinutes: 5,
@@ -91,12 +86,10 @@ export default function App() {
   });
   const [exportHistory, setExportHistory] = useState<ExportHistoryItem[]>([]);
 
-  // Modals state
   const [isAutoExportOpen, setIsAutoExportOpen] = useState(false);
   const [isESP32ModalOpen, setIsESP32ModalOpen] = useState(false);
   const [isLayoutModalOpen, setIsLayoutModalOpen] = useState(false);
 
-  // Handle Day/Night Theme Auto logic
   useEffect(() => {
     if (themeMode === 'auto') {
       const hour = new Date().getHours();
@@ -106,7 +99,6 @@ export default function App() {
     }
   }, [themeMode]);
 
-  // ฟังก์ชันสำหรับเคลียร์ข้อมูลเก่าใน Supabase เมื่อขึ้นสัปดาห์ใหม่ (ทุกวันจันทร์ 00:00 น.)
   const handleAutoResetWeekly = async () => {
     try {
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
@@ -127,6 +119,7 @@ export default function App() {
       if (res.ok) {
         console.log('Successfully cleared old Supabase data for the new week.');
         setHistory([]);
+        lastRecordTimeRef.current = null; // รีเซ็ตเวลาที่บันทึกล่าสุดด้วย
       } else {
         console.error('Failed to clear Supabase weekly data');
       }
@@ -135,19 +128,87 @@ export default function App() {
     }
   };
 
-  // ดึงข้อมูลจาก Supabase โดยตรงทุกๆ 5 วินาที
+  // ✅ ปรับปรุงระบบดึงข้อมูลแบบฉลาด (Smart Polling & Pagination)
   useEffect(() => {
-    const fetchSupabaseData = async () => {
+    const fetchInitialData = async () => {
       try {
         const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
         const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+        if (!supabaseUrl || !supabaseKey) return;
 
-        if (!supabaseUrl || !supabaseKey) {
-          console.error('Missing Supabase environment variables!');
-          return;
+        let allRecords: any[] = [];
+        let offset = 0;
+        const limit = 1000;
+        let keepFetching = true;
+
+        // วนลูปโหลดข้อมูลทีละ 1000 แถวเพื่อทะลุข้อจำกัดของ Supabase
+        while (keepFetching) {
+          const res = await fetch(`${supabaseUrl}/rest/v1/sensor_data?select=*&order=created_at.asc&limit=${limit}&offset=${offset}`, {
+            headers: {
+              'apikey': supabaseKey,
+              'Authorization': `Bearer ${supabaseKey}`
+            }
+          });
+
+          if (res.ok) {
+            const records = await res.json();
+            allRecords = [...allRecords, ...records];
+            if (records.length < limit) {
+              keepFetching = false;
+            } else {
+              offset += limit;
+            }
+          } else {
+            keepFetching = false;
+          }
         }
 
-        const res = await fetch(`${supabaseUrl}/rest/v1/sensor_data?select=*&order=created_at.desc&limit=1000000`, {
+        if (allRecords.length > 0) {
+          const historyData = allRecords.map((record: any) => {
+            const date = new Date(record.created_at);
+            const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+            return {
+              time: date.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+              day: days[date.getDay()],
+              dateStr: date.toLocaleDateString('th-TH'),
+              temperature: record.temperature,
+              humidity: record.humidity,
+            };
+          });
+
+          const latest = allRecords[allRecords.length - 1];
+          lastRecordTimeRef.current = latest.created_at; // บันทึกเวลาล่าสุดไว้
+
+          setTelemetry((prev) => ({
+            ...prev,
+            temperature: latest.temperature ?? prev.temperature,
+            humidity: latest.humidity ?? prev.humidity,
+            barometer: latest.barometer ?? prev.barometer,
+            v100_ln: latest.v100_ln ?? prev.v100_ln,
+            v220_ln: latest.v220_ln ?? prev.v220_ln,
+            v100_lg: latest.v100_lg ?? prev.v100_lg,
+            v220_lg: latest.v220_lg ?? prev.v220_lg,
+            gnd_100v: latest.gnd_100v ?? prev.gnd_100v,
+            gnd_220v: latest.gnd_220v ?? prev.gnd_220v,
+            status: 'online',
+            lastUpdated: new Date().toISOString(),
+          }));
+
+          setHistory(historyData); // โหลดกราฟครั้งแรก
+        }
+      } catch (err) {
+        console.error('Failed to fetch initial data:', err);
+      }
+    };
+
+    const fetchNewData = async () => {
+      try {
+        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+        const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+        if (!supabaseUrl || !supabaseKey || !lastRecordTimeRef.current) return;
+
+        // ดึงเฉพาะข้อมูลที่ "ใหม่กว่า" ข้อมูลล่าสุดที่เรามีในระบบ
+        const res = await fetch(`${supabaseUrl}/rest/v1/sensor_data?select=*&created_at=gt.${lastRecordTimeRef.current}&order=created_at.asc`, {
           headers: {
             'apikey': supabaseKey,
             'Authorization': `Bearer ${supabaseKey}`
@@ -157,9 +218,7 @@ export default function App() {
         if (res.ok) {
           const records = await res.json();
           if (records && records.length > 0) {
-            const sortedRecords = [...records].reverse();
-
-            const historyData = sortedRecords.map((record: any) => {
+            const newHistoryData = records.map((record: any) => {
               const date = new Date(record.created_at);
               const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
               return {
@@ -171,8 +230,9 @@ export default function App() {
               };
             });
 
-            const latest = sortedRecords[sortedRecords.length - 1];
-            
+            const latest = records[records.length - 1];
+            lastRecordTimeRef.current = latest.created_at; // อัปเดตเวลาล่าสุด
+
             setTelemetry((prev) => ({
               ...prev,
               temperature: latest.temperature ?? prev.temperature,
@@ -188,21 +248,20 @@ export default function App() {
               lastUpdated: new Date().toISOString(),
             }));
 
-            setHistory(historyData);
+            // เอาข้อมูลที่เพิ่งมาใหม่ ไป "ต่อท้าย" ข้อมูลเดิมของกราฟ
+            setHistory((prev) => [...prev, ...newHistoryData]);
           }
         }
       } catch (err) {
-        console.error('Failed to fetch data from Supabase:', err);
-        setTelemetry((prev) => ({ ...prev, status: 'offline' }));
+        console.error('Failed to fetch new data:', err);
       }
     };
 
-    fetchSupabaseData();
-    const interval = setInterval(fetchSupabaseData, 5000);
+    fetchInitialData();
+    const interval = setInterval(fetchNewData, 5000);
     return () => clearInterval(interval);
   }, []);
 
-  // Drag and Drop card reordering state
   const [draggedWidgetId, setDraggedWidgetId] = useState<string | null>(null);
 
   const handleDragStart = (id: string) => {
@@ -230,7 +289,6 @@ export default function App() {
     setDraggedWidgetId(null);
   };
 
-  // Automatic Chart Image Export Timer Hook (Updated for Supabase Storage)
   useEffect(() => {
     if (!exportSettings.enabled) return;
 
@@ -247,7 +305,6 @@ export default function App() {
       if (!chartElement) return;
 
       try {
-        // 1. ถ่ายรูปกราฟออกมาเป็น Base64
         const imageData = await toPng(chartElement, { cacheBust: true, quality: 0.95 });
         const nowStr = now.toLocaleString('th-TH');
 
@@ -256,7 +313,6 @@ export default function App() {
             ? 'Weekly Sunday 23:59 Auto Export'
             : `Auto Export (${exportSettings.intervalMinutes}m)`;
 
-        // 2. บันทึกประวัติลง State เพื่อแสดงบนหน้าเว็บ (เหมือนเดิม)
         const newExportItem: ExportHistoryItem = {
           id: `auto_${Date.now()}`,
           timestamp: nowStr,
@@ -266,7 +322,6 @@ export default function App() {
         };
         setExportHistory((prev) => [newExportItem, ...prev].slice(0, 20));
 
-        // 3. (ฟังก์ชันเดิม) หากผู้ใช้เปิด Auto Download ไว้ ให้โหลดลงเครื่องด้วย
         if (exportSettings.autoDownload) {
           const link = document.createElement('a');
           link.download = `IoT_Auto_Export_${Date.now()}.png`;
@@ -274,24 +329,15 @@ export default function App() {
           link.click();
         }
 
-        // ==========================================
-        // 🚀 ส่วนที่เพิ่มใหม่: อัปโหลดรูปขึ้น Supabase Storage
-        // ==========================================
-        
-        // ก. ดึงค่าตัวแปรเชื่อมต่อจาก .env
         const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
         const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-        const bucketName = 'chart-exports'; // ชื่อ Bucket ที่สร้างในขั้นตอนที่ 1
+        const bucketName = 'chart-exports'; 
         
         if (supabaseUrl && supabaseKey) {
-          // ข. แปลงรูป Base64 ให้เป็นไฟล์ก้อนข้อมูล (Blob) เพื่อเตรียมอัปโหลด
           const base64Response = await fetch(imageData);
           const blob = await base64Response.blob();
-          
-          // ค. ตั้งชื่อไฟล์รูปภาพ (เช่น chart_auto_1722842705000.png)
           const fileName = `chart_auto_${Date.now()}.png`;
           
-          // ง. สั่งยิง API อัปโหลดไฟล์ขึ้น Supabase
           const uploadRes = await fetch(`${supabaseUrl}/storage/v1/object/${bucketName}/${fileName}`, {
             method: 'POST',
             headers: {
@@ -304,8 +350,6 @@ export default function App() {
 
           if (uploadRes.ok) {
             console.log(`✅ อัปโหลดรูป ${fileName} ขึ้น Supabase Storage สำเร็จ!`);
-          } else {
-            console.error('❌ อัปโหลดรูปไม่สำเร็จ:', await uploadRes.text());
           }
         }
 
@@ -409,7 +453,6 @@ export default function App() {
                 .filter((w) => w.visible)
                 .map((widget) => {
                   const rawVal = telemetry[widget.key as keyof TelemetryData];
-                  // บังคับให้เป็นทศนิยม 1 ตำแหน่ง (ค่าที่ได้จะเป็น String เช่น "25.0")
                   const displayVal = typeof rawVal === 'number' ? rawVal.toFixed(1) : (0).toFixed(1);
 
                   let isAlert = false;

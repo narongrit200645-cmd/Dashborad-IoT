@@ -230,7 +230,7 @@ export default function App() {
     setDraggedWidgetId(null);
   };
 
-  // Automatic Chart Image Export Timer Hook
+  // Automatic Chart Image Export Timer Hook (Updated for Supabase Storage)
   useEffect(() => {
     if (!exportSettings.enabled) return;
 
@@ -247,6 +247,7 @@ export default function App() {
       if (!chartElement) return;
 
       try {
+        // 1. ถ่ายรูปกราฟออกมาเป็น Base64
         const imageData = await toPng(chartElement, { cacheBust: true, quality: 0.95 });
         const nowStr = now.toLocaleString('th-TH');
 
@@ -255,6 +256,7 @@ export default function App() {
             ? 'Weekly Sunday 23:59 Auto Export'
             : `Auto Export (${exportSettings.intervalMinutes}m)`;
 
+        // 2. บันทึกประวัติลง State เพื่อแสดงบนหน้าเว็บ (เหมือนเดิม)
         const newExportItem: ExportHistoryItem = {
           id: `auto_${Date.now()}`,
           timestamp: nowStr,
@@ -262,15 +264,51 @@ export default function App() {
           title: titleStr,
           imageData,
         };
-
         setExportHistory((prev) => [newExportItem, ...prev].slice(0, 20));
 
+        // 3. (ฟังก์ชันเดิม) หากผู้ใช้เปิด Auto Download ไว้ ให้โหลดลงเครื่องด้วย
         if (exportSettings.autoDownload) {
           const link = document.createElement('a');
           link.download = `IoT_Auto_Export_${Date.now()}.png`;
           link.href = imageData;
           link.click();
         }
+
+        // ==========================================
+        // 🚀 ส่วนที่เพิ่มใหม่: อัปโหลดรูปขึ้น Supabase Storage
+        // ==========================================
+        
+        // ก. ดึงค่าตัวแปรเชื่อมต่อจาก .env
+        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+        const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+        const bucketName = 'chart-exports'; // ชื่อ Bucket ที่สร้างในขั้นตอนที่ 1
+        
+        if (supabaseUrl && supabaseKey) {
+          // ข. แปลงรูป Base64 ให้เป็นไฟล์ก้อนข้อมูล (Blob) เพื่อเตรียมอัปโหลด
+          const base64Response = await fetch(imageData);
+          const blob = await base64Response.blob();
+          
+          // ค. ตั้งชื่อไฟล์รูปภาพ (เช่น chart_auto_1722842705000.png)
+          const fileName = `chart_auto_${Date.now()}.png`;
+          
+          // ง. สั่งยิง API อัปโหลดไฟล์ขึ้น Supabase
+          const uploadRes = await fetch(`${supabaseUrl}/storage/v1/object/${bucketName}/${fileName}`, {
+            method: 'POST',
+            headers: {
+              'apikey': supabaseKey,
+              'Authorization': `Bearer ${supabaseKey}`,
+              'Content-Type': 'image/png'
+            },
+            body: blob
+          });
+
+          if (uploadRes.ok) {
+            console.log(`✅ อัปโหลดรูป ${fileName} ขึ้น Supabase Storage สำเร็จ!`);
+          } else {
+            console.error('❌ อัปโหลดรูปไม่สำเร็จ:', await uploadRes.text());
+          }
+        }
+
       } catch (e) {
         console.error('Auto export chart error:', e);
       }

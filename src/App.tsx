@@ -17,6 +17,9 @@ import {
 } from './types';
 import { toPng } from 'html-to-image';
 
+// กำหนดขีดจำกัดข้อมูล 7 วัน (1 นาที/จุด) = 10,080 บวกเผื่อ Buffer
+const MAX_HISTORY_POINTS = 10500;
+
 // Initial default widgets configuration matching screenshot 100%
 const DEFAULT_WIDGETS: WidgetConfig[] = [
   { id: 'v100_ln', title: '100V L-N', key: 'v100_ln', unit: 'V', iconType: 'bolt', visible: true, order: 0, gridSpan: 'col-span-1' },
@@ -31,7 +34,7 @@ const DEFAULT_WIDGETS: WidgetConfig[] = [
 ];
 
 export default function App() {
-  // ✅ 1. เพิ่ม chartRef ไว้ตรงนี้
+  // ✅ 1. เพิ่ม chartRef ผูกกับ Element กราฟ (อุดช่องโหว่ getElementById)
   const chartRef = useRef<HTMLDivElement>(null);
 
   const [telemetry, setTelemetry] = useState<TelemetryData>({
@@ -101,7 +104,7 @@ export default function App() {
     }
   }, [themeMode]);
 
-  // ✅ 2. แก้ไขให้เหลือแค่การจัดการ State (ไม่ยิง API ลบข้อมูล)
+  // ✅ 2. อุดช่องโหว่ความปลอดภัย: ป้องกันการยิงคำสั่ง DELETE จากฝั่ง Frontend
   const handleAutoResetWeekly = async () => {
     try {
       console.log('Weekly Reset Triggered: Clearing local state.');
@@ -112,7 +115,7 @@ export default function App() {
     }
   };
 
-  // ✅ ปรับปรุงระบบดึงข้อมูลแบบฉลาด (Smart Polling & Pagination)
+  // ✅ 3. ปรับปรุงระบบดึงข้อมูลแบบฉลาด (ดึงเฉพาะสัปดาห์นี้ + ป้องกันลูปนรก)
   useEffect(() => {
     const fetchInitialData = async () => {
       try {
@@ -120,13 +123,25 @@ export default function App() {
         const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
         if (!supabaseUrl || !supabaseKey) return;
 
+        // คำนวณหาวันและเวลาของ "วันจันทร์" ในสัปดาห์ปัจจุบัน (00:00 น.)
+        const now = new Date();
+        const dayOfWeek = now.getDay();
+        const diffToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+        const monday = new Date(now);
+        monday.setDate(now.getDate() + diffToMonday);
+        monday.setHours(0, 0, 0, 0); 
+        const mondayIso = monday.toISOString();
+
         let allRecords: any[] = [];
         let offset = 0;
         const limit = 1000;
         let keepFetching = true;
+        let safetyCounter = 0; // ลิมิตเพื่อไม่ให้ลูปไม่สิ้นสุด
 
-        while (keepFetching) {
-          const res = await fetch(`${supabaseUrl}/rest/v1/sensor_data?select=*&order=created_at.asc&limit=${limit}&offset=${offset}`, {
+        // กรองข้อมูลเฉพาะตั้งแต่ช่วง 00:00 ของวันจันทร์สัปดาห์นี้
+        // วนลูปสูงสุด 11 รอบ (11,000 จุด) ครอบคลุม 10,080 จุด สำหรับ 7 วัน
+        while (keepFetching && safetyCounter < 11) {
+          const res = await fetch(`${supabaseUrl}/rest/v1/sensor_data?select=*&created_at=gte.${mondayIso}&order=created_at.asc&limit=${limit}&offset=${offset}`, {
             headers: {
               'apikey': supabaseKey,
               'Authorization': `Bearer ${supabaseKey}`
@@ -136,6 +151,7 @@ export default function App() {
           if (res.ok) {
             const records = await res.json();
             allRecords = [...allRecords, ...records];
+            
             if (records.length < limit) {
               keepFetching = false;
             } else {
@@ -144,6 +160,7 @@ export default function App() {
           } else {
             keepFetching = false;
           }
+          safetyCounter++;
         }
 
         if (allRecords.length > 0) {
@@ -177,7 +194,7 @@ export default function App() {
             lastUpdated: new Date().toISOString(),
           }));
 
-          setHistory(historyData);
+          setHistory(historyData); 
         }
       } catch (err) {
         console.error('Failed to fetch initial data:', err);
@@ -230,10 +247,10 @@ export default function App() {
               lastUpdated: new Date().toISOString(),
             }));
 
-            // ✅ 3. Limit Array ป้องกัน Memory Leak
+            // ✅ 4. ตัดการทำงาน Array ขยะ (Memory Optimization) ให้จำกัดที่ 10,500 ข้อมูล
             setHistory((prev) => {
               const updatedHistory = [...prev, ...newHistoryData];
-              return updatedHistory.slice(-2000); 
+              return updatedHistory.slice(-MAX_HISTORY_POINTS); 
             });
           }
         }
@@ -278,7 +295,7 @@ export default function App() {
         if (!isSunday || !is2359) return;
       }
 
-      // ✅ 4. ดึงค่าจาก chartRef ที่ประกาศไว้ข้างบน
+      // ดึงค่าการอ้างอิงผ่าน chartRef แทน DOM แบบเก่า
       const chartElement = chartRef.current;
       if (!chartElement) return;
 
@@ -379,7 +396,8 @@ export default function App() {
           humMin: telemetry.humidityTarget - telemetry.humidityTolerance,
           humMax: telemetry.humidityTarget + telemetry.humidityTolerance,
         };
-        return [...prevHistory, newPoint].slice(-1000000);
+        // อัปเดตกราฟจำลองพร้อมป้องกัน Memory Leak ด้วย Limit ข้อมูล 7 วัน
+        return [...prevHistory, newPoint].slice(-MAX_HISTORY_POINTS);
       });
     }
   };
@@ -465,7 +483,7 @@ export default function App() {
           </div>
 
           <div className="lg:col-span-7">
-            {/* ✅ 5. ส่ง containerRef เข้าไป */}
+            {/* ✅ 5. ส่งผ่าน containerRef ไปให้ ChartSection จัดการ */}
             <ChartSection
               containerRef={chartRef}
               history={history}
@@ -487,7 +505,6 @@ export default function App() {
         onClearHistory={() => setExportHistory([])}
         onManualExport={() => {
           setIsAutoExportOpen(false);
-          // ✅ 6. ใช้ chartRef แทน document.getElementById
           const chartElement = chartRef.current;
           if (chartElement) {
             toPng(chartElement, { cacheBust: true, quality: 0.95 }).then((url) => {

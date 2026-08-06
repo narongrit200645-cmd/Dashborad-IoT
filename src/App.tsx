@@ -31,6 +31,9 @@ const DEFAULT_WIDGETS: WidgetConfig[] = [
 ];
 
 export default function App() {
+  // ✅ 1. เพิ่ม chartRef ไว้ตรงนี้
+  const chartRef = useRef<HTMLDivElement>(null);
+
   const [telemetry, setTelemetry] = useState<TelemetryData>({
     v100_ln: 0.0,
     v220_ln: 0.0,
@@ -71,7 +74,6 @@ export default function App() {
   };
 
   const [history, setHistory] = useState<HistoryPoint[]>([]);
-  // เพิ่มตัวแปรอ้างอิงเพื่อจำว่าดึงข้อมูลล่าสุดถึงเวลาไหนแล้ว
   const lastRecordTimeRef = useRef<string | null>(null);
 
   const [widgets, setWidgets] = useState<WidgetConfig[]>(DEFAULT_WIDGETS);
@@ -99,30 +101,12 @@ export default function App() {
     }
   }, [themeMode]);
 
+  // ✅ 2. แก้ไขให้เหลือแค่การจัดการ State (ไม่ยิง API ลบข้อมูล)
   const handleAutoResetWeekly = async () => {
     try {
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-      const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-
-      if (!supabaseUrl || !supabaseKey) return;
-
-      const res = await fetch(`${supabaseUrl}/rest/v1/sensor_data?id=gt.0`, {
-        method: 'DELETE',
-        headers: {
-          'apikey': supabaseKey,
-          'Authorization': `Bearer ${supabaseKey}`,
-          'Content-Type': 'application/json',
-          'Prefer': 'return=minimal'
-        }
-      });
-
-      if (res.ok) {
-        console.log('Successfully cleared old Supabase data for the new week.');
-        setHistory([]);
-        lastRecordTimeRef.current = null; // รีเซ็ตเวลาที่บันทึกล่าสุดด้วย
-      } else {
-        console.error('Failed to clear Supabase weekly data');
-      }
+      console.log('Weekly Reset Triggered: Clearing local state.');
+      setHistory([]);
+      lastRecordTimeRef.current = null;
     } catch (err) {
       console.error('Error during weekly auto-reset:', err);
     }
@@ -141,7 +125,6 @@ export default function App() {
         const limit = 1000;
         let keepFetching = true;
 
-        // วนลูปโหลดข้อมูลทีละ 1000 แถวเพื่อทะลุข้อจำกัดของ Supabase
         while (keepFetching) {
           const res = await fetch(`${supabaseUrl}/rest/v1/sensor_data?select=*&order=created_at.asc&limit=${limit}&offset=${offset}`, {
             headers: {
@@ -177,7 +160,7 @@ export default function App() {
           });
 
           const latest = allRecords[allRecords.length - 1];
-          lastRecordTimeRef.current = latest.created_at; // บันทึกเวลาล่าสุดไว้
+          lastRecordTimeRef.current = latest.created_at;
 
           setTelemetry((prev) => ({
             ...prev,
@@ -194,7 +177,7 @@ export default function App() {
             lastUpdated: new Date().toISOString(),
           }));
 
-          setHistory(historyData); // โหลดกราฟครั้งแรก
+          setHistory(historyData);
         }
       } catch (err) {
         console.error('Failed to fetch initial data:', err);
@@ -207,7 +190,6 @@ export default function App() {
         const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
         if (!supabaseUrl || !supabaseKey || !lastRecordTimeRef.current) return;
 
-        // ดึงเฉพาะข้อมูลที่ "ใหม่กว่า" ข้อมูลล่าสุดที่เรามีในระบบ
         const res = await fetch(`${supabaseUrl}/rest/v1/sensor_data?select=*&created_at=gt.${lastRecordTimeRef.current}&order=created_at.asc`, {
           headers: {
             'apikey': supabaseKey,
@@ -231,7 +213,7 @@ export default function App() {
             });
 
             const latest = records[records.length - 1];
-            lastRecordTimeRef.current = latest.created_at; // อัปเดตเวลาล่าสุด
+            lastRecordTimeRef.current = latest.created_at;
 
             setTelemetry((prev) => ({
               ...prev,
@@ -248,8 +230,11 @@ export default function App() {
               lastUpdated: new Date().toISOString(),
             }));
 
-            // เอาข้อมูลที่เพิ่งมาใหม่ ไป "ต่อท้าย" ข้อมูลเดิมของกราฟ
-            setHistory((prev) => [...prev, ...newHistoryData]);
+            // ✅ 3. Limit Array ป้องกัน Memory Leak
+            setHistory((prev) => {
+              const updatedHistory = [...prev, ...newHistoryData];
+              return updatedHistory.slice(-2000); 
+            });
           }
         }
       } catch (err) {
@@ -264,26 +249,18 @@ export default function App() {
 
   const [draggedWidgetId, setDraggedWidgetId] = useState<string | null>(null);
 
-  const handleDragStart = (id: string) => {
-    setDraggedWidgetId(id);
-  };
-
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-  };
+  const handleDragStart = (id: string) => setDraggedWidgetId(id);
+  const handleDragOver = (e: React.DragEvent) => e.preventDefault();
 
   const handleDrop = (targetId: string) => {
     if (!draggedWidgetId || draggedWidgetId === targetId) return;
-
     const sourceIdx = widgets.findIndex((w) => w.id === draggedWidgetId);
     const targetIdx = widgets.findIndex((w) => w.id === targetId);
 
     if (sourceIdx < 0 || targetIdx < 0) return;
-
     const reordered = [...widgets];
     const [moved] = reordered.splice(sourceIdx, 1);
     reordered.splice(targetIdx, 0, moved);
-
     const reIndexed = reordered.map((w, idx) => ({ ...w, order: idx }));
     setWidgets(reIndexed);
     setDraggedWidgetId(null);
@@ -301,7 +278,8 @@ export default function App() {
         if (!isSunday || !is2359) return;
       }
 
-      const chartElement = document.getElementById('iot-chart-section');
+      // ✅ 4. ดึงค่าจาก chartRef ที่ประกาศไว้ข้างบน
+      const chartElement = chartRef.current;
       if (!chartElement) return;
 
       try {
@@ -352,7 +330,6 @@ export default function App() {
             console.log(`✅ อัปโหลดรูป ${fileName} ขึ้น Supabase Storage สำเร็จ!`);
           }
         }
-
       } catch (e) {
         console.error('Auto export chart error:', e);
       }
@@ -376,13 +353,11 @@ export default function App() {
       title,
       imageData,
     };
-
     setExportHistory((prev) => [newExportItem, ...prev].slice(0, 20));
   }, []);
 
   const handleUpdateTelemetry = async (updated: Partial<TelemetryData>) => {
     setTelemetry((prev) => ({ ...prev, ...updated }));
-
     if (updated.temperature !== undefined || updated.humidity !== undefined) {
       setHistory((prevHistory) => {
         const now = new Date();
@@ -404,7 +379,6 @@ export default function App() {
           humMin: telemetry.humidityTarget - telemetry.humidityTolerance,
           humMax: telemetry.humidityTarget + telemetry.humidityTolerance,
         };
-
         return [...prevHistory, newPoint].slice(-1000000);
       });
     }
@@ -491,7 +465,9 @@ export default function App() {
           </div>
 
           <div className="lg:col-span-7">
+            {/* ✅ 5. ส่ง containerRef เข้าไป */}
             <ChartSection
+              containerRef={chartRef}
               history={history}
               telemetry={telemetry}
               isDark={isDark}
@@ -511,9 +487,10 @@ export default function App() {
         onClearHistory={() => setExportHistory([])}
         onManualExport={() => {
           setIsAutoExportOpen(false);
-          const chartElement = document.getElementById('iot-chart-section');
+          // ✅ 6. ใช้ chartRef แทน document.getElementById
+          const chartElement = chartRef.current;
           if (chartElement) {
-            toPng(chartElement).then((url) => {
+            toPng(chartElement, { cacheBust: true, quality: 0.95 }).then((url) => {
               handleManualExportSaved(url, 'Manual Export from Manager');
             });
           }

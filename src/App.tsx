@@ -96,12 +96,28 @@ export default function App() {
   const [isLayoutModalOpen, setIsLayoutModalOpen] = useState(false);
 
   useEffect(() => {
-    if (themeMode === 'auto') {
+    let timer: ReturnType<typeof setInterval>;
+
+    const updateAutoTheme = () => {
       const hour = new Date().getHours();
+      // โหมดกลางคืน: ก่อน 6 โมงเช้า หรือ หลัง 6 โมงเย็น
       setIsDark(hour < 6 || hour >= 18);
+    };
+
+    if (themeMode === 'auto') {
+      // 1. ตรวจสอบและเปลี่ยนธีมทันทีที่กดปุ่ม Auto
+      updateAutoTheme();
+      // 2. ตั้งเวลาตรวจเช็คเวลาใหม่ทุกๆ 1 นาที (60,000 มิลลิวินาที)
+      timer = setInterval(updateAutoTheme, 60000);
     } else {
+      // โหมดสลับมือ (Manual Day/Night)
       setIsDark(themeMode === 'night');
     }
+
+    // ล้างตัวจับเวลาทิ้งทุกครั้งที่เปลี่ยนโหมด หรือปิดหน้าเว็บ เพื่อไม่ให้กินแรม
+    return () => {
+      if (timer) clearInterval(timer);
+    };
   }, [themeMode]);
 
   // ✅ 2. อุดช่องโหว่ความปลอดภัย: ป้องกันการยิงคำสั่ง DELETE จากฝั่ง Frontend

@@ -139,13 +139,13 @@ export default function App() {
         let safetyCounter = 0; // ลิมิตเพื่อไม่ให้ลูปไม่สิ้นสุด
 
         // กรองข้อมูลเฉพาะตั้งแต่ช่วง 00:00 ของวันจันทร์สัปดาห์นี้
-        // วนลูปสูงสุด 11 รอบ (11,000 จุด) ครอบคลุม 10,080 จุด สำหรับ 7 วัน
         while (keepFetching && safetyCounter < 11) {
           const res = await fetch(`${supabaseUrl}/rest/v1/sensor_data?select=*&created_at=gte.${mondayIso}&order=created_at.asc&limit=${limit}&offset=${offset}`, {
             headers: {
               'apikey': supabaseKey,
               'Authorization': `Bearer ${supabaseKey}`
-            }
+            },
+            cache: 'no-store' // ✅ สั่งห้ามเบราว์เซอร์จำแคช
           });
 
           if (res.ok) {
@@ -211,7 +211,8 @@ export default function App() {
           headers: {
             'apikey': supabaseKey,
             'Authorization': `Bearer ${supabaseKey}`
-          }
+          },
+          cache: 'no-store' // ✅ สั่งห้ามเบราว์เซอร์จำแคช เพื่อให้กราฟวิ่งแบบ Real-time
         });
 
         if (res.ok) {

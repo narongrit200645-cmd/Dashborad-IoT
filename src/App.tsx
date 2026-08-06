@@ -207,12 +207,16 @@ export default function App() {
         const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
         if (!supabaseUrl || !supabaseKey || !lastRecordTimeRef.current) return;
 
-        const res = await fetch(`${supabaseUrl}/rest/v1/sensor_data?select=*&created_at=gt.${lastRecordTimeRef.current}&order=created_at.asc`, {
+        // ✅ แก้ไขตรงนี้: เข้ารหัส URL ให้กับ Timestamp ป้องกันเครื่องหมาย + หรือช่องว่างทำ URL พัง
+        const safeTimeStr = encodeURIComponent(lastRecordTimeRef.current);
+
+        // ✅ นำ safeTimeStr ไปใช้แทนตัวเดิม
+        const res = await fetch(`${supabaseUrl}/rest/v1/sensor_data?select=*&created_at=gt.${safeTimeStr}&order=created_at.asc`, {
           headers: {
             'apikey': supabaseKey,
             'Authorization': `Bearer ${supabaseKey}`
           },
-          cache: 'no-store' // ✅ สั่งห้ามเบราว์เซอร์จำแคช เพื่อให้กราฟวิ่งแบบ Real-time
+          cache: 'no-store' 
         });
 
         if (res.ok) {

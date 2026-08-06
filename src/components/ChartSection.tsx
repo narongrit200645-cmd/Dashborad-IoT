@@ -16,6 +16,8 @@ import { toPng, toJpeg } from 'html-to-image';
 import { HistoryPoint, TelemetryData } from '../types';
 
 interface ChartSectionProps {
+  // ✅ 1. เพิ่ม containerRef ใน Props
+  containerRef?: React.RefObject<HTMLDivElement>;
   history: HistoryPoint[];
   telemetry: TelemetryData;
   isDark?: boolean;
@@ -93,13 +95,13 @@ const dayMap: Record<string, number> = {
 };
 
 export const ChartSection: React.FC<ChartSectionProps> = ({
+  containerRef, // ✅ รับ ref มาจาก App
   history,
   telemetry,
   isDark = true,
   onManualExportSaved,
   onAutoResetWeekly,
 }) => {
-  const chartContainerRef = useRef<HTMLDivElement>(null);
   const [isExporting, setIsExporting] = useState(false);
   const [exportSuccessMsg, setExportSuccessMsg] = useState<string | null>(null);
   
@@ -110,7 +112,6 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
 
   const [showMinMax, setShowMinMax] = useState({ tempMin: true, tempMax: true, humMin: true, humMax: true });
 
-  // ฟังก์ชันตรวจสอบและเคลียร์ค่าเมื่อขึ้นสัปดาห์ใหม่ (วันจันทร์ 00:00 น.)
   useEffect(() => {
     const checkWeeklyReset = () => {
       const now = new Date();
@@ -191,27 +192,20 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
 
   const dateRangeLabel = useMemo(() => {
     const now = new Date();
-    
-    // หาว่าวันนี้คือวันอะไร (0 = อาทิตย์, 1 = จันทร์, ..., 6 = เสาร์)
     const dayOfWeek = now.getDay(); 
-    
-    // คำนวณห่างกี่วันเพื่อถอยกลับไปหาวันจันทร์ (ถ้าวันนี้เป็นวันอาทิตย์ ต้องถอย 6 วัน)
     const diffToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
     
-    // หาวันที่ของวันจันทร์ในสัปดาห์นี้
     const monday = new Date(now);
     monday.setDate(now.getDate() + diffToMonday);
     
-    // หาวันที่ของวันอาทิตย์ในสัปดาห์นี้ (บวกไปอีก 6 วันจากวันจันทร์)
     const sunday = new Date(monday);
     sunday.setDate(monday.getDate() + 6);
     
-    // แปลงเป็นข้อความรูปแบบ th-TH (เช่น 3/8/2569)
     const startStr = monday.toLocaleDateString('th-TH');
     const endStr = sunday.toLocaleDateString('th-TH');
     
     return `${startStr} - ${endStr}`;
-  }, []); // นำ history ออกจาก array เพื่อไม่ต้องคำนวณใหม่เมื่อข้อมูลเปลี่ยน
+  }, []);
 
   useEffect(() => {
     if (autoMode) {
@@ -249,14 +243,15 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
   };
 
   const handleExportImage = async (format: 'png' | 'jpeg' = 'png') => {
-    if (!chartContainerRef.current) return;
+    // ✅ 2. เช็คว่ามี Ref ถูกส่งมามั้ย ก่อนทำการ Export
+    if (!containerRef?.current) return;
     setIsExporting(true);
     setExportSuccessMsg(null);
 
     try {
       const dataUrl = format === 'png'
-          ? await toPng(chartContainerRef.current, { cacheBust: true, quality: 0.95 })
-          : await toJpeg(chartContainerRef.current, { cacheBust: true, quality: 0.95 });
+          ? await toPng(containerRef.current, { cacheBust: true, quality: 0.95 })
+          : await toJpeg(containerRef.current, { cacheBust: true, quality: 0.95 });
 
       const link = document.createElement('a');
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
@@ -280,39 +275,30 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
 
   const visibleRange = brushRange.endIndex - brushRange.startIndex;
   const isZoomed = chartData.length > 10 && visibleRange < (chartData.length * 0.8);
-  
-  // เพิ่ม effectiveIsZoomed เพื่อนำมาใช้งานร่วมกับปุ่มโหมดซูม (isZoomMode)
   const effectiveIsZoomed = isZoomMode || isZoomed;
 
   const formatAdaptiveXAxisTick = (val: any) => {
     const dayIdx = Math.floor(val / 24);
     const totalHours = val % 24;
     const hour = Math.floor(totalHours);
-    
-    // แปลงเศษของชั่วโมงเป็นนาที
     const minute = Math.round((totalHours - hour) * 60);
 
-    // ปรับชื่อพฤหัสบดีให้สั้นลงตามรูปภาพ
     const labels = ['จันทร์', 'อังคาร', 'พุธ', 'พฤหัส', 'ศุกร์', 'เสาร์', 'อาทิตย์', ''];
     const shortLabels = ['จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', 'ส.', 'อา.', ''];
     
-    // กรณีที่ดูกราฟแบบปกติ (ยังไม่ได้ซูม)
     if (!effectiveIsZoomed) {
-       if (hour === 0 && minute === 0) return labels[dayIdx] || ''; // เวลา 00:00 ให้แสดงชื่อวัน
-       if (hour === 12 && minute === 0) return '12:00';             // เวลา 12:00 ให้แสดง "12:00"
+       if (hour === 0 && minute === 0) return labels[dayIdx] || ''; 
+       if (hour === 12 && minute === 0) return '12:00';             
        return ''; 
     }
 
-    // กรณีที่อยู่ในโหมดซูม
     if (hour === 0 && minute === 0) {
        return labels[dayIdx] || '';
     }
     
-    // แสดงเวลาที่มีทั้งชั่วโมงและนาที
     return `${shortLabels[dayIdx] || ''} ${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
   };
 
-  // กำหนดอาเรย์สำหรับเส้นเวลาเที่ยงคืนของแต่ละวัน (ชั่วโมงที่ 24, 48, 72, 96, 120, 144)
   const midnightLines = [24, 48, 72, 96, 120, 144];
 
   const handleBrushChange = (range: any) => {
@@ -335,7 +321,7 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
 
   return (
     <div
-      ref={chartContainerRef}
+      ref={containerRef} // ✅ 3. ผูก ref จาก props
       id="iot-chart-section"
       className={`flex flex-col p-5 rounded-xl border transition-all duration-300 ${
         isDark
@@ -397,7 +383,6 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
         </div>
       </div>
 
-      {/* กราฟ Temperature */}
       <div className="mb-6">
         <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
           <div className="flex items-center space-x-2">
@@ -443,7 +428,6 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
                 stroke={isDark ? '#334155' : '#CBD5E1'} 
               />
               
-              {/* เพิ่มโค้ดส่วนนี้ใต้ Tooltip เพื่อสร้างเส้นเที่ยงคืน */}
               {midnightLines.map(hour => (
                 <ReferenceLine 
                   key={`temp-midnight-${hour}`} 
@@ -504,7 +488,6 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
         </div>
       </div>
 
-      {/* กราฟ Humidity */}
       <div>
         <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
           <div className="flex items-center space-x-2">
@@ -550,7 +533,6 @@ export const ChartSection: React.FC<ChartSectionProps> = ({
                 stroke={isDark ? '#334155' : '#CBD5E1'} 
               />
               
-              {/* เพิ่มโค้ดส่วนนี้ใต้ Tooltip เพื่อสร้างเส้นเที่ยงคืน */}
               {midnightLines.map(hour => (
                 <ReferenceLine 
                   key={`hum-midnight-${hour}`} 
